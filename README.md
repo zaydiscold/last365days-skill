@@ -3,7 +3,7 @@
 <p align="center">claude code skill for persistent research tracking. wraps <a href="https://github.com/mvanhorn/last30days-skill">last30days</a> with per-person/topic running logs.</p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/skill-v1.0.0-B4A7D6?style=flat-square&labelColor=1a1a2e" alt="skill version" />
+  <img src="https://img.shields.io/badge/skill-v1.0.1-B4A7D6?style=flat-square&labelColor=1a1a2e" alt="skill version" />
   <img src="https://img.shields.io/badge/zayd.wtf-D4AF37?style=flat-square&labelColor=1a1a2e" alt="site" />
 </p>
 
@@ -106,6 +106,23 @@ each file:
 <br>
 
 ## changelog
+
+### v1.0.1
+- Anthropic skill guide compliance: license, compatibility, metadata in frontmatter
+- improved description with trigger phrases for better skill activation
+- file format docs moved to `references/file-format.md` (progressive disclosure)
+- added examples and troubleshooting sections per Anthropic guide
+- **bugfix**: report.json date range keys now handle nested `range.from`/`range.to`
+- **bugfix**: slugify fallback is now deterministic (sha256 instead of Python hash)
+- added `search` subcommand: search synthesis content across all profiles
+- added `--research-dir` and `--report-path` CLI overrides to persist.py
+- `LAST30DAYS_OUT` env var support for custom last30days output location
+- match results sorted by confidence (exact > high > medium)
+- show_history now includes same-day sub-entries (`#### Update at HH:MM`)
+- error handling for corrupted files and invalid report.json
+- improved Unicode handling in slugify (NFKD normalization)
+- qmd after-hook guarded with command-exists check
+- documented `--days`, `--quick`, `--deep` flag forwarding from last30days
 
 ### v1.0.0
 - initial release: persistent per-person/topic research logs

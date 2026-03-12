@@ -130,6 +130,12 @@ If you find a verified handle, pass it as `--x-handle={handle}` in the research 
 
 Run the Last 30 Days research engine. This is the same script — nothing changes about the research quality or depth.
 
+**Flag forwarding**: If the user includes any of these flags, pass them through to the research script:
+- `--days=N` — override the default 30-day window (e.g., `--days=7` for a quick weekly check)
+- `--quick` — faster research with fewer sources (triggered by "quick check", "quick look")
+- `--deep` — thorough research with more sources (triggered by "deep dive", "deep research")
+- `--x-handle=HANDLE` — from STEP 1 if an X handle was resolved
+
 ```bash
 for dir in \
   "." \
@@ -147,6 +153,8 @@ fi
 
 python3 "${SKILL_ROOT}/scripts/last30days.py" "$ARGUMENTS" --emit=compact --no-native-web
 ```
+
+Append any resolved flags (`--x-handle`, `--days`, `--quick`, `--deep`) to the command above.
 
 Use a **timeout of 300000** (5 minutes). Read the ENTIRE output — it contains all 8 data sections.
 
@@ -252,6 +260,18 @@ To read a full profile:
 
 ```bash
 python3 ${CLAUDE_SKILL_DIR}/scripts/persist.py read "<slug>"
+```
+
+To search across all profiles:
+
+```bash
+python3 ${CLAUDE_SKILL_DIR}/scripts/persist.py search "query terms"
+```
+
+To search within a specific profile:
+
+```bash
+python3 ${CLAUDE_SKILL_DIR}/scripts/persist.py search "query terms" --slug "<slug>"
 ```
 
 ---

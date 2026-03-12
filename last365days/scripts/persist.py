@@ -10,14 +10,17 @@ Subcommands:
     append <slug>       Read report.json + synthesis from stdin, append section
     history <slug>      Show dates and previews of existing entries
     read <slug>         Output full file contents (for LLM context)
+    search <query>      Search synthesis content across all profiles
     slugify <topic>     Convert topic string to filename slug
 """
 
 import argparse
+import hashlib
 import json
 import os
 import re
 import sys
+import unicodedata
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -31,15 +34,17 @@ LAST30DAYS_OUT = DEFAULT_LAST30DAYS_OUT
 
 def slugify(text: str) -> str:
     text = text.lower().strip()
-    ascii_text = text.encode('ascii', 'ignore').decode()
+    normalized = unicodedata.normalize('NFKD', text)
+    ascii_text = normalized.encode('ascii', 'ignore').decode()
     if not ascii_text.strip():
-        ascii_text = text
+        ascii_text = text.encode('ascii', 'replace').decode()
     ascii_text = re.sub(r'[^\w\s-]', '', ascii_text)
     ascii_text = re.sub(r'[\s_]+', '-', ascii_text)
     ascii_text = re.sub(r'-+', '-', ascii_text)
     result = ascii_text.strip('-')
     if not result:
-        result = f"topic-{abs(hash(text)) % 100000}"
+        stable_hash = hashlib.sha256(text.encode('utf-8', 'replace')).hexdigest()[:8]
+        result = f"topic-{stable_hash}"
     return result
 
 
@@ -47,7 +52,11 @@ def list_profiles() -> List[Dict[str, Any]]:
     RESEARCH_DIR.mkdir(parents=True, exist_ok=True)
     profiles = []
     for f in sorted(RESEARCH_DIR.glob("*.md")):
-        content = f.read_text()
+        try:
+            content = f.read_text(encoding='utf-8', errors='replace')
+        except (OSError, IOError) as e:
+            sys.stderr.write(f"[persist] Warning: could not read {f}: {e}\n")
+            continue
         title = ""
         dates = []
         entry_count = 0
@@ -69,6 +78,9 @@ def list_profiles() -> List[Dict[str, Any]]:
     return profiles
 
 
+_CONFIDENCE_ORDER = {"exact": 0, "high": 1, "medium": 2}
+
+
 def suggest_matches(topic: str, profiles: list) -> list:
     topic_lower = topic.lower()
     topic_slug = slugify(topic)
@@ -85,6 +97,7 @@ def suggest_matches(topic: str, profiles: list) -> list:
             overlap = len(topic_tokens & title_tokens) / max(len(topic_tokens), len(title_tokens))
             if overlap >= 0.5:
                 matches.append({**p, "confidence": "medium"})
+    matches.sort(key=lambda m: _CONFIDENCE_ORDER.get(m["confidence"], 99))
     return matches
 
 
@@ -98,8 +111,12 @@ def read_report() -> dict:
     report_path = LAST30DAYS_OUT / "report.json"
     if not report_path.exists():
         return {}
-    with open(report_path) as f:
-        return json.load(f)
+    try:
+        with open(report_path, encoding='utf-8') as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError) as e:
+        sys.stderr.write(f"[persist] Warning: could not read {report_path}: {e}\n")
+        return {}
 
 
 def _report_topic_matches(report: dict, slug: str, title: str) -> bool:
@@ -227,7 +244,10 @@ def append_entry(slug: str, title: str, synthesis: str = "") -> dict:
             section_lines.append(top)
             section_lines.append("")
 
-        date_range = f"{report.get('range_from', '?')} to {report.get('range_to', '?')}"
+        range_obj = report.get('range') or {}
+        range_from = range_obj.get('from', report.get('range_from', '?'))
+        range_to = range_obj.get('to', report.get('range_to', '?'))
+        date_range = f"{range_from} to {range_to}"
         section_lines.append(f"\n*Research window: {date_range}*")
 
     section_lines.append("\n---\n")
@@ -261,19 +281,37 @@ def show_history(slug: str) -> dict:
     if not filepath.exists():
         return {"error": f"No profile found: {slug}"}
 
-    content = filepath.read_text()
+    try:
+        content = filepath.read_text(encoding='utf-8', errors='replace')
+    except (OSError, IOError) as e:
+        return {"error": f"Could not read {slug}: {e}"}
+
     entries = []
     current_date = None
+    current_time = None
     current_synthesis_lines: List[str] = []
     in_synthesis = False
 
+    def _flush_entry():
+        if current_date:
+            preview = ' '.join(current_synthesis_lines)[:200] if current_synthesis_lines else "(no synthesis)"
+            label = current_date
+            if current_time:
+                label = f"{current_date} (update at {current_time})"
+            entries.append({"date": label, "preview": preview})
+
     for line in content.split('\n'):
         date_match = re.match(r'^## (\d{4}-\d{2}-\d{2})', line)
+        update_match = re.match(r'^#### Update at (\d{2}:\d{2})', line)
         if date_match:
-            if current_date:
-                preview = ' '.join(current_synthesis_lines)[:200] if current_synthesis_lines else "(no synthesis)"
-                entries.append({"date": current_date, "preview": preview})
+            _flush_entry()
             current_date = date_match.group(1)
+            current_time = None
+            current_synthesis_lines = []
+            in_synthesis = False
+        elif update_match:
+            _flush_entry()
+            current_time = update_match.group(1)
             current_synthesis_lines = []
             in_synthesis = False
         elif line.strip() == "### Synthesis":
@@ -283,11 +321,41 @@ def show_history(slug: str) -> dict:
         elif in_synthesis and line.strip():
             current_synthesis_lines.append(line.strip())
 
-    if current_date:
-        preview = ' '.join(current_synthesis_lines)[:200] if current_synthesis_lines else "(no synthesis)"
-        entries.append({"date": current_date, "preview": preview})
+    _flush_entry()
 
     return {"slug": slug, "file": str(filepath), "entries": entries}
+
+
+def search_profiles(query: str, slug_filter: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Search synthesis content across all profiles (or a single one)."""
+    RESEARCH_DIR.mkdir(parents=True, exist_ok=True)
+    query_lower = query.lower()
+    results = []
+    files = [RESEARCH_DIR / f"{slug_filter}.md"] if slug_filter else sorted(RESEARCH_DIR.glob("*.md"))
+    for f in files:
+        if not f.exists():
+            continue
+        try:
+            content = f.read_text(encoding='utf-8', errors='replace')
+        except (OSError, IOError):
+            continue
+        title = ""
+        current_date = None
+        for line in content.split('\n'):
+            if line.startswith('# ') and not title:
+                title = line[2:].strip()
+            date_match = re.match(r'^## (\d{4}-\d{2}-\d{2})', line)
+            if date_match:
+                current_date = date_match.group(1)
+            if query_lower in line.lower():
+                snippet = line.strip()[:200]
+                results.append({
+                    "slug": f.stem,
+                    "title": title or f.stem,
+                    "date": current_date,
+                    "snippet": snippet,
+                })
+    return results
 
 
 def read_profile(slug: str) -> dict:
@@ -318,6 +386,10 @@ def main():
 
     r = sub.add_parser("read", help="Output full profile contents")
     r.add_argument("slug", help="Profile slug")
+
+    se = sub.add_parser("search", help="Search synthesis content across profiles")
+    se.add_argument("query", nargs="+", help="Search query")
+    se.add_argument("--slug", help="Limit search to a single profile")
 
     s = sub.add_parser("slugify", help="Convert topic to slug")
     s.add_argument("topic", nargs="+", help="Topic to slugify")
@@ -360,6 +432,11 @@ def main():
             print(json.dumps(result))
         else:
             print(result["content"])
+
+    elif args.command == "search":
+        query = " ".join(args.query)
+        results = search_profiles(query, slug_filter=args.slug)
+        print(json.dumps({"query": query, "results": results, "total": len(results)}, indent=2))
 
     elif args.command == "slugify":
         print(slugify(" ".join(args.topic)))
