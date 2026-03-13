@@ -17,7 +17,7 @@ compatibility: >-
   Uses CLAUDE_SKILL_DIR or CLAUDE_PLUGIN_ROOT for script paths.
 metadata:
   author: zayd
-  version: 1.0.1
+  version: 1.1.0
   repository: https://github.com/zaydiscold/last365days-skill
 user-invocable: true
 argument-hint: 'last365 Saba Nafees, last365 kanye west, last365 AI video tools'
@@ -27,7 +27,7 @@ hooks:
       command: "command -v qmd >/dev/null 2>&1 && qmd update >> /dev/null 2>&1 || true"
 ---
 
-# last365days v1.0: Persistent Research Tracker
+# last365days v1.1: Persistent Research Tracker
 
 Same deep research as `/last30days` — Reddit, X, YouTube, TikTok, Instagram, HN, Polymarket, web — but every run is saved to a per-person/topic MD file. Over time you build a running timeline: what changed, what's new, how far they've come.
 
@@ -49,6 +49,16 @@ Each profile is a Markdown file with dated `## YYYY-MM-DD` sections containing `
 
 The user's topic is: $ARGUMENTS
 
+If `$ARGUMENTS` is empty, the user is asking to browse profiles rather than run
+new research. In that case, stop here and list profiles:
+
+```bash
+python3 ${CLAUDE_SKILL_DIR}/scripts/persist.py list
+```
+
+Show the result to the user and do not continue into matching, research, or
+persistence.
+
 Parse this for **TOPIC** (and optionally TARGET_TOOL, QUERY_TYPE) exactly as `/last30days` does.
 
 The profile list above shows what already exists. Now run a targeted match:
@@ -62,23 +72,48 @@ This returns:
 - `suggested_slug`: what the filename would be if creating new
 - `total_profiles`: how many profiles exist
 
-### Matching Rules
+### Matching rules
 
-**ALWAYS tell the user which file you're writing to. Never match or create silently.**
+Always tell the user which file you're writing to. Never match or create
+silently.
 
-- `"confidence": "exact"` or `"high"` — USE the existing profile. Tell the user:
-  "Found existing profile: {slug}.md ({N} entries, last updated {date}). Appending to it."
-- `"confidence": "medium"` — READ the file first to verify it's the same person/topic:
+- `"confidence": "exact"` or `"high"` — Use the existing profile. Tell the
+  user: "Found existing profile: `{slug}.md` ({N} entries, last updated
+  {date}). Appending to it."
+- `"confidence": "medium"` — Never append automatically. First read the file:
 
 ```bash
 python3 ${CLAUDE_SKILL_DIR}/scripts/persist.py read "<slug>"
 ```
 
-If the synthesis content is clearly about the same person/topic, use the existing profile and tell the user. If it's a different person who happens to share a name token, create a new profile and tell the user why.
+After reading the file, follow this confirmation flow:
 
-- **No matches** — Tell the user: "No existing profile found. Creating {slug}.md"
+1. If the content is clearly a different person or topic, create a new profile
+   and tell the user why.
+2. If the content still looks plausible but you are not fully certain, ask the
+   user to choose before continuing.
+3. Only append to the existing profile if the user explicitly confirms it.
 
-**When in doubt, create a new profile.** It's better to have two separate files than to corrupt one with unrelated research. The user can merge them later.
+Use direct language when asking. Name both options so the user can make a clean
+decision. For example:
+
+```
+I found a possible existing profile: {slug}.md ({N} entries, last updated {date}).
+It looks related, but I am not confident enough to append automatically.
+
+Do you want me to:
+1. Use {slug}.md
+2. Create a new profile: {suggested_slug}.md
+```
+
+If the user declines, is unsure, or gives an ambiguous answer, create a new
+profile. Do not risk corrupting an existing timeline.
+
+- **No matches** — Tell the user: "No existing profile found. Creating
+  `{slug}.md`."
+
+When in doubt, create a new profile. It is better to have two separate files
+than to corrupt one with unrelated research. The user can merge them later.
 
 **If there IS a match with history**, load context for comparison:
 
@@ -272,6 +307,30 @@ To search within a specific profile:
 
 ```bash
 python3 ${CLAUDE_SKILL_DIR}/scripts/persist.py search "query terms" --slug "<slug>"
+```
+
+To validate paths and dependencies:
+
+```bash
+python3 ${CLAUDE_SKILL_DIR}/scripts/persist.py doctor
+```
+
+To diff two saved dates from one profile:
+
+```bash
+python3 ${CLAUDE_SKILL_DIR}/scripts/persist.py diff "<slug>" "<date1>" "<date2>"
+```
+
+To export one profile:
+
+```bash
+python3 ${CLAUDE_SKILL_DIR}/scripts/persist.py export "<slug>" --format json
+```
+
+To export every profile:
+
+```bash
+python3 ${CLAUDE_SKILL_DIR}/scripts/persist.py export --all --format csv
 ```
 
 ---

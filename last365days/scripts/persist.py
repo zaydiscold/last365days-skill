@@ -15,10 +15,14 @@ Subcommands:
 """
 
 import argparse
+import csv
+import difflib
 import hashlib
+import io
 import json
 import os
 import re
+import shutil
 import sys
 import unicodedata
 from datetime import datetime
@@ -79,9 +83,25 @@ def list_profiles() -> List[Dict[str, Any]]:
 
 
 _CONFIDENCE_ORDER = {"exact": 0, "high": 1, "medium": 2}
+_STATUS_ORDER = {"ok": 0, "warn": 1, "error": 2}
+_EXPORT_CSV_FIELDS = [
+    "slug",
+    "title",
+    "date",
+    "update_time",
+    "label",
+    "synthesis",
+    "sources",
+    "notable_items",
+    "research_window",
+    "file",
+]
 
 
 def suggest_matches(topic: str, profiles: list) -> list:
+    topic = topic.strip()
+    if not topic:
+        return []
     topic_lower = topic.lower()
     topic_slug = slugify(topic)
     topic_tokens = set(topic_lower.split())
@@ -105,6 +125,122 @@ def _safe_eng(item: dict, key: str, default=0):
     eng = item.get("engagement") or {}
     val = eng.get(key)
     return val if val is not None else default
+
+
+def resolve_profile_path(slug: str) -> Path:
+    cleaned = slug.strip()
+    if not cleaned:
+        raise ValueError("Profile slug cannot be blank.")
+    if any(sep in cleaned for sep in ("/", "\\")) or ".." in cleaned:
+        raise ValueError("Profile slug cannot contain path traversal segments.")
+
+    base = RESEARCH_DIR.resolve()
+    candidate = (RESEARCH_DIR / f"{cleaned}.md").resolve()
+    if candidate != base and base not in candidate.parents:
+        raise ValueError("Profile slug resolves outside the research directory.")
+    return candidate
+
+
+def _pick_status(*statuses: str) -> str:
+    chosen = "ok"
+    for status in statuses:
+        if _STATUS_ORDER.get(status, -1) > _STATUS_ORDER.get(chosen, -1):
+            chosen = status
+    return chosen
+
+
+def _first_existing_parent(path: Path) -> Optional[Path]:
+    current = path
+    while True:
+        if current.exists():
+            return current
+        if current.parent == current:
+            return None
+        current = current.parent
+
+
+def _check_directory(path: Path, *, create_on_write: bool = False) -> Dict[str, Any]:
+    path = path.expanduser()
+    if path.exists():
+        if not path.is_dir():
+            return {
+                "status": "error",
+                "path": str(path),
+                "message": "Path exists, but it is not a directory.",
+            }
+        if not os.access(path, os.W_OK):
+            return {
+                "status": "error",
+                "path": str(path),
+                "message": "Directory exists, but it is not writable.",
+            }
+        return {
+            "status": "ok",
+            "path": str(path),
+            "message": "Directory exists and is writable.",
+        }
+
+    parent = _first_existing_parent(path.parent)
+    if parent and parent.is_dir() and os.access(parent, os.W_OK):
+        message = "Directory does not exist yet, but it can be created."
+        if create_on_write:
+            message = "Directory does not exist yet; it will be created on first write."
+        return {
+            "status": "warn",
+            "path": str(path),
+            "message": message,
+            "parent": str(parent),
+        }
+
+    return {
+        "status": "error",
+        "path": str(path),
+        "message": "Directory does not exist and cannot be created from the current parent path.",
+        "parent": str(parent) if parent else None,
+    }
+
+
+def _last30days_candidates() -> List[Path]:
+    candidates: List[Path] = []
+    raw_candidates = [
+        ".",
+        os.environ.get("CLAUDE_PLUGIN_ROOT"),
+        os.environ.get("CLAUDE_SKILL_DIR"),
+        str(Path.home() / ".claude" / "skills" / "last30days"),
+        str(Path.home() / ".agents" / "skills" / "last30days"),
+        str(Path.home() / ".codex" / "skills" / "last30days"),
+    ]
+    seen = set()
+    for raw in raw_candidates:
+        if not raw:
+            continue
+        candidate = Path(raw).expanduser()
+        key = str(candidate)
+        if key in seen:
+            continue
+        seen.add(key)
+        candidates.append(candidate)
+    return candidates
+
+
+def find_last30days_script() -> Dict[str, Any]:
+    checked = []
+    for root in _last30days_candidates():
+        script_path = root / "scripts" / "last30days.py"
+        checked.append(str(script_path))
+        if script_path.exists():
+            return {
+                "status": "ok",
+                "path": str(script_path),
+                "checked": checked,
+                "message": "Found last30days research engine.",
+            }
+    return {
+        "status": "error",
+        "path": None,
+        "checked": checked,
+        "message": "Could not find last30days.py in any expected install location.",
+    }
 
 
 def read_report() -> dict:
@@ -137,6 +273,108 @@ def _report_topic_matches(report: dict, slug: str, title: str) -> bool:
         if overlap >= 0.4:
             return True
     return False
+
+
+def _validate_report_shape(report: Any) -> Dict[str, Any]:
+    source_keys = [
+        "reddit",
+        "x",
+        "youtube",
+        "tiktok",
+        "instagram",
+        "hackernews",
+        "polymarket",
+        "web",
+    ]
+    if not isinstance(report, dict):
+        return {
+            "status": "error",
+            "message": "report.json must contain a top-level JSON object.",
+        }
+
+    issues = []
+    topic = report.get("topic")
+    if topic is not None and not isinstance(topic, str):
+        issues.append("topic must be a string when present")
+
+    range_obj = report.get("range")
+    has_range = (
+        isinstance(range_obj, dict)
+        and isinstance(range_obj.get("from"), str)
+        and isinstance(range_obj.get("to"), str)
+    ) or (
+        isinstance(report.get("range_from"), str)
+        and isinstance(report.get("range_to"), str)
+    )
+    if not has_range:
+        issues.append("missing range metadata")
+
+    bad_sources = [key for key in source_keys if key in report and not isinstance(report[key], list)]
+    if bad_sources:
+        issues.append(f"source buckets must be lists: {', '.join(sorted(bad_sources))}")
+
+    present_sources = [key for key in source_keys if isinstance(report.get(key), list)]
+    status = "ok" if not issues else "warn"
+    return {
+        "status": status,
+        "message": "report.json is readable and has the expected top-level shape." if not issues else "; ".join(issues),
+        "topic": topic,
+        "sources_present": present_sources,
+    }
+
+
+def run_doctor() -> Dict[str, Any]:
+    research_dir = _check_directory(RESEARCH_DIR, create_on_write=True)
+    output_dir = _check_directory(LAST30DAYS_OUT)
+    report_path = LAST30DAYS_OUT / "report.json"
+    last30days_dep = find_last30days_script()
+
+    qmd_path = shutil.which("qmd")
+    qmd_dep = {
+        "status": "ok" if qmd_path else "warn",
+        "path": qmd_path,
+        "message": "Found qmd executable." if qmd_path else "qmd not found. Index refresh hook will be skipped.",
+    }
+
+    if not report_path.exists():
+        report_json = {
+            "status": "warn",
+            "path": str(report_path),
+            "message": "report.json not found. Run last30days first if you want source stats.",
+        }
+    else:
+        try:
+            with open(report_path, encoding="utf-8") as handle:
+                report = json.load(handle)
+        except (json.JSONDecodeError, OSError) as exc:
+            report_json = {
+                "status": "error",
+                "path": str(report_path),
+                "message": f"Could not read report.json: {exc}",
+            }
+        else:
+            report_json = {
+                "path": str(report_path),
+                **_validate_report_shape(report),
+            }
+
+    status = _pick_status(
+        research_dir["status"],
+        output_dir["status"],
+        report_json["status"],
+        last30days_dep["status"],
+        qmd_dep["status"],
+    )
+    return {
+        "status": status,
+        "research_dir": research_dir,
+        "last30days_output_dir": output_dir,
+        "report_json": report_json,
+        "dependencies": {
+            "last30days.py": last30days_dep,
+            "qmd": qmd_dep,
+        },
+    }
 
 
 def format_stats_block(report: dict) -> str:
@@ -204,7 +442,10 @@ def _find_same_day_section(content: str, today: str) -> bool:
 
 def append_entry(slug: str, title: str, synthesis: str = "") -> dict:
     RESEARCH_DIR.mkdir(parents=True, exist_ok=True)
-    filepath = RESEARCH_DIR / f"{slug}.md"
+    try:
+        filepath = resolve_profile_path(slug)
+    except ValueError as exc:
+        return {"error": str(exc)}
     today = datetime.now().strftime("%Y-%m-%d")
     now_time = datetime.now().strftime("%H:%M")
     report = read_report()
@@ -277,7 +518,10 @@ def append_entry(slug: str, title: str, synthesis: str = "") -> dict:
 
 
 def show_history(slug: str) -> dict:
-    filepath = RESEARCH_DIR / f"{slug}.md"
+    try:
+        filepath = resolve_profile_path(slug)
+    except ValueError as exc:
+        return {"error": str(exc)}
     if not filepath.exists():
         return {"error": f"No profile found: {slug}"}
 
@@ -331,7 +575,13 @@ def search_profiles(query: str, slug_filter: Optional[str] = None) -> List[Dict[
     RESEARCH_DIR.mkdir(parents=True, exist_ok=True)
     query_lower = query.lower()
     results = []
-    files = [RESEARCH_DIR / f"{slug_filter}.md"] if slug_filter else sorted(RESEARCH_DIR.glob("*.md"))
+    if slug_filter:
+        try:
+            files = [resolve_profile_path(slug_filter)]
+        except ValueError:
+            return []
+    else:
+        files = sorted(RESEARCH_DIR.glob("*.md"))
     for f in files:
         if not f.exists():
             continue
@@ -358,8 +608,220 @@ def search_profiles(query: str, slug_filter: Optional[str] = None) -> List[Dict[
     return results
 
 
+def _normalize_block_text(lines: List[str]) -> str:
+    return "\n".join(lines).strip()
+
+
+def parse_profile_content(content: str, slug: str, filepath: Path) -> Dict[str, Any]:
+    title = ""
+    entries: List[Dict[str, Any]] = []
+    current_date: Optional[str] = None
+    current_time: Optional[str] = None
+    current_section: Optional[str] = None
+    current_lines: List[str] = []
+    current_synthesis: List[str] = []
+    current_sources: List[str] = []
+    current_notable_items: List[str] = []
+    current_research_window: Optional[str] = None
+
+    def _reset_entry() -> None:
+        nonlocal current_section, current_lines, current_synthesis
+        nonlocal current_sources, current_notable_items, current_research_window
+        current_section = None
+        current_lines = []
+        current_synthesis = []
+        current_sources = []
+        current_notable_items = []
+        current_research_window = None
+
+    def _flush_entry() -> None:
+        if current_date is None:
+            return
+        label = current_date if not current_time else f"{current_date} (update at {current_time})"
+        entries.append(
+            {
+                "date": current_date,
+                "update_time": current_time,
+                "label": label,
+                "synthesis": _normalize_block_text(current_synthesis),
+                "sources": _normalize_block_text(current_sources),
+                "notable_items": _normalize_block_text(current_notable_items),
+                "research_window": current_research_window,
+                "raw_markdown": _normalize_block_text(current_lines),
+            }
+        )
+
+    for line in content.split("\n"):
+        if line.startswith("# ") and not title:
+            title = line[2:].strip()
+            continue
+
+        date_match = re.match(r"^## (\d{4}-\d{2}-\d{2})\s*$", line)
+        update_match = re.match(r"^#### Update at (\d{2}:\d{2})\s*$", line)
+        if date_match:
+            _flush_entry()
+            current_date = date_match.group(1)
+            current_time = None
+            _reset_entry()
+            current_lines.append(line)
+            continue
+        if update_match and current_date is not None:
+            _flush_entry()
+            current_time = update_match.group(1)
+            _reset_entry()
+            current_lines.append(line)
+            continue
+
+        if current_date is None:
+            continue
+
+        current_lines.append(line)
+        heading_match = re.match(r"^### (.+)$", line)
+        if heading_match:
+            heading = heading_match.group(1).strip().lower()
+            if heading == "notable items":
+                current_section = "notable_items"
+            elif heading in {"synthesis", "sources"}:
+                current_section = heading
+            else:
+                current_section = None
+            continue
+
+        if line.strip() == "---":
+            current_section = None
+            continue
+
+        research_window_match = re.match(r"^\*Research window: (.+)\*$", line.strip())
+        if research_window_match:
+            current_research_window = research_window_match.group(1)
+            continue
+
+        if not line.strip():
+            continue
+
+        if current_section == "synthesis":
+            current_synthesis.append(line.strip())
+        elif current_section == "sources":
+            current_sources.append(line.strip())
+        elif current_section == "notable_items":
+            current_notable_items.append(line.strip())
+
+    _flush_entry()
+    return {
+        "slug": slug,
+        "title": title or slug,
+        "file": str(filepath),
+        "entry_count": len(entries),
+        "entries": entries,
+    }
+
+
+def export_profile_data(slug: str) -> Dict[str, Any]:
+    try:
+        filepath = resolve_profile_path(slug)
+    except ValueError as exc:
+        return {"error": str(exc)}
+    if not filepath.exists():
+        return {"error": f"No profile found: {slug}"}
+    content = filepath.read_text(encoding="utf-8", errors="replace")
+    return parse_profile_content(content, slug, filepath)
+
+
+def export_all_profile_data() -> Dict[str, Any]:
+    profiles = []
+    for filepath in sorted(RESEARCH_DIR.glob("*.md")):
+        content = filepath.read_text(encoding="utf-8", errors="replace")
+        profiles.append(parse_profile_content(content, filepath.stem, filepath))
+    return {
+        "profiles": profiles,
+        "total_profiles": len(profiles),
+        "total_entries": sum(profile["entry_count"] for profile in profiles),
+    }
+
+
+def _profiles_to_csv_rows(profiles: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    rows = []
+    for profile in profiles:
+        for entry in profile["entries"]:
+            rows.append(
+                {
+                    "slug": profile["slug"],
+                    "title": profile["title"],
+                    "date": entry["date"],
+                    "update_time": entry["update_time"] or "",
+                    "label": entry["label"],
+                    "synthesis": entry["synthesis"],
+                    "sources": entry["sources"],
+                    "notable_items": entry["notable_items"],
+                    "research_window": entry["research_window"] or "",
+                    "file": profile["file"],
+                }
+            )
+    return rows
+
+
+def render_csv(rows: List[Dict[str, Any]]) -> str:
+    buffer = io.StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=_EXPORT_CSV_FIELDS)
+    writer.writeheader()
+    for row in rows:
+        writer.writerow(row)
+    return buffer.getvalue()
+
+
+def extract_date_blocks(content: str) -> Dict[str, str]:
+    blocks: Dict[str, str] = {}
+    current_date: Optional[str] = None
+    current_lines: List[str] = []
+    for line in content.split("\n"):
+        date_match = re.match(r"^## (\d{4}-\d{2}-\d{2})\s*$", line)
+        if date_match:
+            if current_date is not None:
+                blocks[current_date] = _normalize_block_text(current_lines)
+            current_date = date_match.group(1)
+            current_lines = [line]
+            continue
+        if current_date is not None:
+            current_lines.append(line)
+    if current_date is not None:
+        blocks[current_date] = _normalize_block_text(current_lines)
+    return blocks
+
+
+def diff_profile_dates(slug: str, date1: str, date2: str) -> Dict[str, Any]:
+    profile = export_profile_data(slug)
+    if "error" in profile:
+        return profile
+
+    content = Path(profile["file"]).read_text(encoding="utf-8", errors="replace")
+    blocks = extract_date_blocks(content)
+    if date1 not in blocks or date2 not in blocks:
+        return {
+            "error": f"Could not diff {slug}. Available dates: {', '.join(sorted(blocks))}",
+            "available_dates": sorted(blocks),
+        }
+
+    diff_lines = difflib.unified_diff(
+        blocks[date1].splitlines(),
+        blocks[date2].splitlines(),
+        fromfile=f"{slug}:{date1}",
+        tofile=f"{slug}:{date2}",
+        lineterm="",
+    )
+    return {
+        "slug": slug,
+        "title": profile["title"],
+        "from_date": date1,
+        "to_date": date2,
+        "diff": "\n".join(diff_lines),
+    }
+
+
 def read_profile(slug: str) -> dict:
-    filepath = RESEARCH_DIR / f"{slug}.md"
+    try:
+        filepath = resolve_profile_path(slug)
+    except ValueError as exc:
+        return {"error": str(exc)}
     if not filepath.exists():
         return {"error": f"No profile found: {slug}"}
     content = filepath.read_text()
@@ -373,6 +835,7 @@ def main():
     sub = parser.add_subparsers(dest="command")
 
     sub.add_parser("list", help="List existing profiles")
+    sub.add_parser("doctor", help="Validate paths, report.json, and dependencies")
 
     m = sub.add_parser("match", help="Suggest matching profiles for a topic")
     m.add_argument("topic", nargs="+", help="Topic to match")
@@ -391,6 +854,16 @@ def main():
     se.add_argument("query", nargs="+", help="Search query")
     se.add_argument("--slug", help="Limit search to a single profile")
 
+    d = sub.add_parser("diff", help="Diff two dated entries from the same profile")
+    d.add_argument("slug", help="Profile slug")
+    d.add_argument("date1", help="Earlier date in YYYY-MM-DD format")
+    d.add_argument("date2", help="Later date in YYYY-MM-DD format")
+
+    ex = sub.add_parser("export", help="Export one profile or all profiles")
+    ex.add_argument("slug", nargs="?", help="Profile slug")
+    ex.add_argument("--all", action="store_true", help="Export all profiles")
+    ex.add_argument("--format", choices=["md", "json", "csv"], required=True, help="Output format")
+
     s = sub.add_parser("slugify", help="Convert topic to slug")
     s.add_argument("topic", nargs="+", help="Topic to slugify")
 
@@ -405,8 +878,21 @@ def main():
     if args.command == "list":
         print(json.dumps(list_profiles(), indent=2))
 
+    elif args.command == "doctor":
+        result = run_doctor()
+        print(json.dumps(result, indent=2))
+        sys.exit(0 if result["status"] != "error" else 1)
+
     elif args.command == "match":
         topic = " ".join(args.topic)
+        if not topic.strip():
+            print(json.dumps({
+                "topic": "",
+                "suggested_slug": None,
+                "matches": [],
+                "total_profiles": len(list_profiles()),
+            }, indent=2))
+            return
         profiles = list_profiles()
         matches = suggest_matches(topic, profiles)
         print(json.dumps({
@@ -422,6 +908,8 @@ def main():
             synthesis = sys.stdin.read()
         result = append_entry(args.slug, args.title, synthesis)
         print(json.dumps(result, indent=2))
+        if "error" in result:
+            sys.exit(1)
 
     elif args.command == "history":
         print(json.dumps(show_history(args.slug), indent=2))
@@ -437,6 +925,41 @@ def main():
         query = " ".join(args.query)
         results = search_profiles(query, slug_filter=args.slug)
         print(json.dumps({"query": query, "results": results, "total": len(results)}, indent=2))
+
+    elif args.command == "diff":
+        result = diff_profile_dates(args.slug, args.date1, args.date2)
+        print(json.dumps(result, indent=2))
+        if "error" in result:
+            sys.exit(1)
+
+    elif args.command == "export":
+        if args.all and args.slug:
+            print(json.dumps({"error": "Use either a slug or --all, not both."}, indent=2))
+            sys.exit(1)
+        if not args.all and not args.slug:
+            print(json.dumps({"error": "Provide a slug or use --all."}, indent=2))
+            sys.exit(1)
+        if args.all and args.format == "md":
+            print(json.dumps({"error": "Markdown export is only available for a single profile."}, indent=2))
+            sys.exit(1)
+
+        if args.all:
+            payload = export_all_profile_data()
+            if args.format == "json":
+                print(json.dumps(payload, indent=2))
+            else:
+                sys.stdout.write(render_csv(_profiles_to_csv_rows(payload["profiles"])))
+        else:
+            profile = export_profile_data(args.slug)
+            if "error" in profile:
+                print(json.dumps(profile, indent=2))
+                sys.exit(1)
+            if args.format == "md":
+                sys.stdout.write(Path(profile["file"]).read_text(encoding="utf-8", errors="replace"))
+            elif args.format == "json":
+                print(json.dumps(profile, indent=2))
+            else:
+                sys.stdout.write(render_csv(_profiles_to_csv_rows([profile])))
 
     elif args.command == "slugify":
         print(slugify(" ".join(args.topic)))

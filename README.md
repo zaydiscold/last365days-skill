@@ -1,145 +1,251 @@
 <h1 align="center">last365days-skill</h1>
 
-<p align="center">claude code skill for persistent research tracking. wraps <a href="https://github.com/mvanhorn/last30days-skill">last30days</a> with per-person/topic running logs.</p>
-
 <p align="center">
-  <img src="https://img.shields.io/badge/skill-v1.0.1-B4A7D6?style=flat-square&labelColor=1a1a2e" alt="skill version" />
-  <img src="https://img.shields.io/badge/zayd.wtf-D4AF37?style=flat-square&labelColor=1a1a2e" alt="site" />
+  Persistent research tracking for people, brands, and topics. This skill wraps
+  <a href="https://github.com/mvanhorn/last30days-skill">last30days</a> and
+  saves each run into a dated Markdown timeline.
 </p>
 
 <p align="center">
-  <a href="#what-it-does">what it does</a> · <a href="#install">install</a> · <a href="#usage">usage</a> · <a href="#how-it-works">how it works</a>
+  <img src="https://img.shields.io/badge/skill-v1.1.0-B4A7D6?style=flat-square&labelColor=1a1a2e" alt="skill version" />
+  <img src="https://img.shields.io/badge/license-MIT-D4AF37?style=flat-square&labelColor=1a1a2e" alt="license" />
 </p>
 
-<br>
+## What it does
 
-## what it does
+`last30days` can research a topic deeply, but the output is ephemeral. Once the
+session ends, you lose the accumulated context. `last365days` adds persistence
+on top of that workflow.
 
-[last30days](https://github.com/mvanhorn/last30days-skill) researches any topic across reddit, x, youtube, tiktok, instagram, hacker news, polymarket, and the web. it's powerful — but ephemeral. once you close the session, the research is gone.
+Each run appends a dated section to a single Markdown file for that person or
+topic. Over time, that file becomes a timeline you can revisit, diff, export,
+and extend.
 
-**last365days** wraps it with persistence. every research run is saved to a dated section in a per-person/topic markdown file. run it on the same person a month later and it appends a new entry, compares what changed, and builds a timeline.
+## Compatibility matrix
 
-one file per person. growing log. long-term memory.
+This repo is runtime-agnostic at the file level, but it relies on
+`last30days` for the research engine.
 
-works in claude code, codex, cursor, openclaw. one install, all agents.
+| Runtime | Supported | Notes |
+| --- | --- | --- |
+| Claude Code | Yes | Native skill workflow and `CLAUDE_SKILL_DIR` path support |
+| Codex | Yes | Reads the same skill files and Python helper |
+| Cursor | Yes | Works as a repo-backed skill with the same persistence layer |
+| OpenClaw | Yes | Uses the same Markdown storage model |
+| Python CLI only | Partial | `persist.py` commands work directly without the skill wrapper |
 
-<br>
+## Install
 
-## install
+Install `last30days` first. `last365days` depends on its research output and
+its `last30days.py` engine.
 
-**prerequisite:** [last30days](https://github.com/mvanhorn/last30days-skill) must be installed and working (it provides the research engine).
+To install globally:
 
 ```bash
 npx skills add zaydiscold/last365days-skill@last365days -g -y
 ```
 
-or install to a single agent:
+To install for one agent only:
 
 ```bash
 npx skills add zaydiscold/last365days-skill@last365days -y
 ```
 
-research output saves to `~/Desktop/last365days/` by default. override with `LAST365DAYS_DIR` env var.
+By default, saved research goes to `~/Desktop/last365days/`. Override that
+directory with `LAST365DAYS_DIR`.
 
-<br>
+`persist.py` reads stats from `~/.local/share/last30days/out/report.json` by
+default. Override that location with `LAST30DAYS_OUT` or the `--report-path`
+flag.
 
-## usage
+## Usage
 
-```bash
-/last365days saba nafees         # research + save to saba-nafees.md
-/last365days kanye west          # research + save to kanye-west.md
-/last365days AI video tools      # works for topics too
-```
-
-run it again later on the same person:
+The main skill entry point is `/last365days`.
 
 ```bash
-/last365days saba nafees         # appends new entry, shows what changed
+/last365days saba nafees
+/last365days kanye west
+/last365days AI video tools
 ```
 
-the skill matches against existing profiles automatically. if it's not sure, it creates a new file rather than risk mixing people up.
-
-browse your profiles:
+Run it again later on the same topic and the skill appends a new dated entry:
 
 ```bash
-/last365days                     # lists all profiles
+/last365days saba nafees
 ```
 
-<br>
+If the match is exact or high confidence, the skill appends automatically. If
+the match is only medium confidence, the skill now asks the user to confirm
+whether it should reuse the existing file or create a new one.
 
-## how it works
+To browse existing profiles:
 
+```bash
+/last365days
 ```
-/last365days <person>
+
+## Persist CLI reference
+
+`last365days/scripts/persist.py` is the persistence layer behind the skill. You
+can run it directly when you want diagnostics or structured exports.
+
+### Core commands
+
+These commands are the ones the skill depends on during normal use.
+
+```bash
+python3 last365days/scripts/persist.py list
+python3 last365days/scripts/persist.py match "Saba Nafees"
+python3 last365days/scripts/persist.py history "saba-nafees"
+python3 last365days/scripts/persist.py read "saba-nafees"
+python3 last365days/scripts/persist.py search "founder mode"
+python3 last365days/scripts/persist.py slugify "Saba Nafees"
+```
+
+### New v1.1 commands
+
+These commands improve trust, debugging, and operability.
+
+```bash
+python3 last365days/scripts/persist.py doctor
+python3 last365days/scripts/persist.py diff "saba-nafees" 2026-03-05 2026-04-05
+python3 last365days/scripts/persist.py export "saba-nafees" --format json
+python3 last365days/scripts/persist.py export --all --format csv
+```
+
+`doctor` checks:
+
+- whether the research directory exists or can be created
+- whether the last30days output directory is available
+- whether `report.json` is readable and shaped like a valid report
+- whether `last30days.py` is installed
+- whether optional `qmd` indexing is available
+
+`diff` compares two saved date blocks from the same profile using a deterministic
+unified diff.
+
+`export` lets you move data out of the Markdown files without hand parsing:
+
+- `export <slug> --format md|json|csv`
+- `export --all --format json|csv`
+
+## How it works
+
+The runtime behavior is split cleanly between the skill instructions and the
+Python helper.
+
+```text
+/last365days <topic>
         │
         ▼
-┌─ SKILL.md workflow ──────────────────────────────────┐
-│  1. Check existing profiles (auto-injected on load)  │
-│  2. Match against existing or create new             │
-│  3. Run last30days.py research engine (unchanged)    │
-│  4. Synthesize (same as /last30days)                 │
-│  5. If history exists: compare what changed          │
-│  6. Append dated section to person's MD file         │
-└──────────────────────────────────────────────────────┘
+SKILL.md
+  1. List existing profiles
+  2. Match against existing files
+  3. Ask for confirmation on medium-confidence matches
+  4. Run last30days research
+  5. Synthesize and compare against history
+  6. Persist the new entry
         │
         ▼
+persist.py
+  - appends Markdown entries
+  - reads report.json for stats
+  - exposes history/search/diff/export/doctor commands
+```
+
+Saved files live in `~/Desktop/last365days/` by default:
+
+```text
 ~/Desktop/last365days/
-├── saba-nafees.md          ← one file per person
+├── saba-nafees.md
 ├── kanye-west.md
-├── ai-video-tools.md       ← topics work too
+├── ai-video-tools.md
 └── ...
-
-each file:
-  # Saba Nafees
-  ## 2026-03-05
-  ### Synthesis
-  [what was learned, key patterns]
-  ### Sources
-  [auto-generated stats from all 8 sources]
-  ---
-  ## 2026-04-05
-  ### Synthesis
-  [new findings + what changed since last time]
-  ---
 ```
 
-<br>
+The Markdown format is documented in
+`last365days/references/file-format.md`.
 
-## changelog
+## Repository map
+
+If you need to understand where to look before changing something, start here.
+
+- `last365days/SKILL.md`: runtime workflow, matching rules, and user-facing
+  research behavior
+- `last365days/scripts/persist.py`: persistence CLI, storage parsing, exports,
+  diffs, and diagnostics
+- `last365days/references/file-format.md`: profile file structure and same-day
+  update format
+- `tests/test_persist.py`: CLI regression coverage for slugify, matching,
+  history, search, doctor, diff, and export
+- `.github/workflows/ci.yml`: syntax check plus test execution on push and pull
+  request
+
+## Testing and CI
+
+This repo now includes a minimal built-in Python test suite and a GitHub Actions
+workflow.
+
+Run everything locally with:
+
+```bash
+python3 -m compileall last365days tests
+python3 -m unittest discover -s tests -v
+```
+
+CI runs the same two checks on every push to `main` and on pull requests.
+
+## Known limitations
+
+The current design stays intentionally lean. A few limits are deliberate.
+
+- Medium-confidence matches still rely on user confirmation rather than richer
+  identity metadata.
+- `diff` compares whole dated Markdown blocks. It does not produce semantic
+  summaries.
+- `export --all --format md` is not supported.
+- Source stats depend on a compatible `report.json` produced by `last30days`.
+- There are no destructive workflows yet for merge, delete-entry, or
+  delete-profile.
+- File writes are simple append operations. There is no broad locking or atomic
+  rewrite strategy yet.
+
+## v1.2 backlog
+
+These items are intentionally deferred because they add more risk than the v1.1
+changes.
+
+- `merge`, `delete-entry`, and `delete-profile` with backup and confirmation
+- profile metadata blocks such as aliases, canonical handles, and timestamps
+- broader locking and atomic rewrite strategy for concurrent edits
+
+## Changelog
+
+### v1.1.0
+
+- added `doctor` diagnostics for path, dependency, and `report.json` validation
+- added `diff <slug> <date1> <date2>` for deterministic profile comparisons
+- added `export` support for Markdown, JSON, and CSV outputs
+- added a test suite for core CLI behavior
+- added GitHub Actions CI for syntax and tests
+- changed medium-confidence matches to require explicit user confirmation
+- expanded documentation with a repo map, command reference, and known limits
 
 ### v1.0.1
-- Anthropic skill guide compliance: license, compatibility, metadata in frontmatter
-- improved description with trigger phrases for better skill activation
-- file format docs moved to `references/file-format.md` (progressive disclosure)
-- added examples and troubleshooting sections per Anthropic guide
-- **bugfix**: report.json date range keys now handle nested `range.from`/`range.to`
-- **bugfix**: slugify fallback is now deterministic (sha256 instead of Python hash)
-- added `search` subcommand: search synthesis content across all profiles
-- added `--research-dir` and `--report-path` CLI overrides to persist.py
-- `LAST30DAYS_OUT` env var support for custom last30days output location
-- match results sorted by confidence (exact > high > medium)
-- show_history now includes same-day sub-entries (`#### Update at HH:MM`)
-- error handling for corrupted files and invalid report.json
-- improved Unicode handling in slugify (NFKD normalization)
-- qmd after-hook guarded with command-exists check
-- documented `--days`, `--quick`, `--deep` flag forwarding from last30days
+
+- added Anthropic skill guide metadata and compatibility frontmatter
+- moved file format details into `references/file-format.md`
+- added troubleshooting and better trigger phrases
+- added `search` plus CLI path overrides for `persist.py`
+- improved Unicode slug handling and deterministic fallback slugs
+- guarded the `qmd` after-hook so it only runs when available
 
 ### v1.0.0
-- initial release: persistent per-person/topic research logs
-- wraps last30days research engine (all 8 sources)
-- same-person matching with exact/high/medium confidence
-- same-day duplicate handling (sub-entries)
-- report.json topic validation before pulling stats
-- qmd collection auto-indexed via after-hook
-- `${CLAUDE_SKILL_DIR}` for portable paths
-- `LAST365DAYS_DIR` env var for custom output location
 
-<br>
-
-<p align="left"><strong>zayd / cold</strong></p>
+- shipped persistent per-person and per-topic Markdown timelines
+- wrapped `last30days` research output in a reusable profile model
+- added same-day duplicate handling and automatic source stats
 
 <p align="center">
-  <a href="https://zayd.wtf">zayd.wtf</a> · <a href="https://x.com/coldcooks">twitter</a> · <a href="https://github.com/zaydiscold">github</a>
+  <a href="./LICENSE">MIT</a>
 </p>
-
-<p align="center">mit. <a href="./LICENSE">license</a></p>
