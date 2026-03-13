@@ -63,7 +63,6 @@ flag.
 The main skill entry point is `/last365days`.
 
 ```bash
-/last365days saba nafees
 /last365days kanye west
 /last365days AI video tools
 ```
@@ -71,7 +70,7 @@ The main skill entry point is `/last365days`.
 Run it again later on the same topic and the skill appends a new dated entry:
 
 ```bash
-/last365days saba nafees
+/last365days kanye west
 ```
 
 If the match is exact or high confidence, the skill appends automatically. If
