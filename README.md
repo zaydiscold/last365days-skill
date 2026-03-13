@@ -94,11 +94,11 @@ These commands are the ones the skill depends on during normal use.
 
 ```bash
 python3 last365days/scripts/persist.py list
-python3 last365days/scripts/persist.py match "Saba Nafees"
-python3 last365days/scripts/persist.py history "saba-nafees"
-python3 last365days/scripts/persist.py read "saba-nafees"
+python3 last365days/scripts/persist.py match "Kanye West"
+python3 last365days/scripts/persist.py history "kanye-west"
+python3 last365days/scripts/persist.py read "kanye-west"
 python3 last365days/scripts/persist.py search "founder mode"
-python3 last365days/scripts/persist.py slugify "Saba Nafees"
+python3 last365days/scripts/persist.py slugify "Kanye West"
 ```
 
 ### New v1.1 commands
@@ -107,8 +107,8 @@ These commands improve trust, debugging, and operability.
 
 ```bash
 python3 last365days/scripts/persist.py doctor
-python3 last365days/scripts/persist.py diff "saba-nafees" 2026-03-05 2026-04-05
-python3 last365days/scripts/persist.py export "saba-nafees" --format json
+python3 last365days/scripts/persist.py diff "kanye-west" 2026-03-05 2026-04-05
+python3 last365days/scripts/persist.py export "kanye-west" --format json
 python3 last365days/scripts/persist.py export --all --format csv
 ```
 
@@ -156,8 +156,8 @@ Saved files live in `~/Desktop/last365days/` by default:
 
 ```text
 ~/Desktop/last365days/
-├── saba-nafees.md
 ├── kanye-west.md
+├── taylor-swift.md
 ├── ai-video-tools.md
 └── ...
 ```
