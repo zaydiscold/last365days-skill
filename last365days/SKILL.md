@@ -1,30 +1,9 @@
 ---
 name: last365days
 description: >-
-  Persistent research tracker. Runs the same deep research as /last30days
-  but saves a running per-person/topic log to ~/Desktop/last365days/.
-  Each run appends a dated section — over time you build a timeline of how
-  a person or topic evolves. Use when user says "last365", "last365days",
-  "track over time", "research timeline", "persistent research", "build a
-  profile", or wants long-term monitoring of a person, brand, or topic.
-  Also triggered by "last365 <name>".
-license: MIT
-allowed-tools: Bash, Read, Write, AskUserQuestion, WebSearch
-compatibility: >-
-  Requires the last30days skill (provides the research engine).
-  Optional: qmd for knowledge-base indexing.
-  Supported runtimes: Claude Code, Codex, Cursor, OpenClaw.
-  Uses CLAUDE_SKILL_DIR or CLAUDE_PLUGIN_ROOT for script paths.
-metadata:
-  author: zayd
-  version: 1.1.0
-  repository: https://github.com/zaydiscold/last365days-skill
-user-invocable: true
-argument-hint: 'last365 Saba Nafees, last365 kanye west, last365 AI video tools'
-hooks:
-  after:
-    - type: command
-      command: "command -v qmd >/dev/null 2>&1 && qmd update >> /dev/null 2>&1 || true"
+  Use when the user wants long-term tracking for a person, brand, or topic,
+  asks for a research timeline or persistent profile, or invokes "last365 ..."
+  to save repeated research into dated history files.
 ---
 
 # last365days v1.1: Persistent Research Tracker
@@ -33,9 +12,30 @@ Same deep research as `/last30days` — Reddit, X, YouTube, TikTok, Instagram, H
 
 Research folder: `~/Desktop/last365days/`
 
+## Requirements
+
+This skill depends on the `last30days` skill for the research engine. It uses
+`${CLAUDE_SKILL_DIR}` for local script paths and reads source stats from
+`~/.local/share/last30days/out/report.json` by default.
+
+Optional: if `qmd` is installed in the host environment, you can refresh your
+knowledge index after a run with:
+
+```bash
+command -v qmd >/dev/null 2>&1 && qmd update >> /dev/null 2>&1 || true
+```
+
+If you need browse, export, or troubleshooting workflows, load
+`references/operations.md`. Do not load it for the normal research path unless
+the user asks for those tasks.
+
 ## Existing Profiles
 
-!`python3 ${CLAUDE_SKILL_DIR}/scripts/persist.py list`
+To inspect the existing profile list at the start of the workflow, run:
+
+```bash
+python3 ${CLAUDE_SKILL_DIR}/scripts/persist.py list
+```
 
 ---
 
@@ -47,10 +47,11 @@ Each profile is a Markdown file with dated `## YYYY-MM-DD` sections containing `
 
 ## STEP 0: Parse Intent + Check History
 
-The user's topic is: $ARGUMENTS
+The user's raw topic is the exact text they provided after invoking
+`last365days`.
 
-If `$ARGUMENTS` is empty, the user is asking to browse profiles rather than run
-new research. In that case, stop here and list profiles:
+If the user did not provide a topic, they are asking to browse profiles rather
+than run new research. In that case, stop here and list profiles:
 
 ```bash
 python3 ${CLAUDE_SKILL_DIR}/scripts/persist.py list
@@ -59,13 +60,23 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/persist.py list
 Show the result to the user and do not continue into matching, research, or
 persistence.
 
-Parse this for **TOPIC** (and optionally TARGET_TOOL, QUERY_TYPE) exactly as `/last30days` does.
+Parse that raw topic into:
+
+- **TOPIC**: the main person, brand, product, or idea being researched
+- **QUERY_TYPE**:
+  - `recommendations` for "best", "top", "alternatives", or shortlist requests
+  - `news` for "latest", "what changed", "update", or recent-event requests
+  - `prompting` for prompt examples, prompt templates, or AI workflow requests
+  - `general` for everything else
 
 The profile list above shows what already exists. Now run a targeted match:
 
 ```bash
-python3 ${CLAUDE_SKILL_DIR}/scripts/persist.py match "$ARGUMENTS"
+python3 ${CLAUDE_SKILL_DIR}/scripts/persist.py match "<RAW_TOPIC>"
 ```
+
+Substitute the concrete raw topic string from the user in place of
+`<RAW_TOPIC>`. Do not pass the literal placeholder.
 
 This returns:
 - `matches`: existing profiles with confidence levels (exact/high/medium)
@@ -151,7 +162,8 @@ Research typically takes 2-8 minutes. Starting now.
 
 ## STEP 1: Resolve X Handle (if applicable)
 
-Same as `/last30days`: if the topic could have an X account (person, brand, company), do a quick WebSearch to find their handle:
+If the topic could have an X account (person, brand, company), do a quick
+WebSearch to find their handle:
 
 ```
 WebSearch("{TOPIC} X twitter handle site:x.com")
@@ -186,10 +198,12 @@ if [ -z "${SKILL_ROOT:-}" ]; then
   exit 1
 fi
 
-python3 "${SKILL_ROOT}/scripts/last30days.py" "$ARGUMENTS" --emit=compact --no-native-web
+python3 "${SKILL_ROOT}/scripts/last30days.py" "<TOPIC>" --emit=compact --no-native-web
 ```
 
-Append any resolved flags (`--x-handle`, `--days`, `--quick`, `--deep`) to the command above.
+Run the same command with the real parsed topic text in place of the final
+argument. Append any resolved flags (`--x-handle`, `--days`, `--quick`,
+`--deep`) to that command.
 
 Use a **timeout of 300000** (5 minutes). Read the ENTIRE output — it contains all 8 data sections.
 
@@ -197,12 +211,12 @@ Use a **timeout of 300000** (5 minutes). Read the ENTIRE output — it contains 
 
 ## STEP 3: WebSearch Supplement
 
-After the script finishes, do WebSearch to supplement — same rules as `/last30days`:
+After the script finishes, do WebSearch to supplement the script output:
 
 - **RECOMMENDATIONS**: search for "best {TOPIC} recommendations", "{TOPIC} list examples"
-- **NEWS**: search for "{TOPIC} news 2026", "{TOPIC} announcement update"
-- **PROMPTING**: search for "{TOPIC} prompts examples 2026"
-- **GENERAL**: search for "{TOPIC} 2026", "{TOPIC} discussion"
+- **NEWS**: search for "{TOPIC} news", "{TOPIC} announcement update"
+- **PROMPTING**: search for "{TOPIC} prompts examples"
+- **GENERAL**: search for "{TOPIC}", "{TOPIC} discussion"
 
 Exclude reddit.com, x.com, twitter.com (covered by script).
 
@@ -210,13 +224,19 @@ Exclude reddit.com, x.com, twitter.com (covered by script).
 
 ## STEP 4: Synthesize + Present
 
-Follow the same synthesis rules as `/last30days`:
+Synthesize across the script output and the WebSearch supplement using these
+rules:
 
 1. Weight Reddit/X higher (engagement signals), YouTube/TikTok high (views + transcripts), web lower
 2. Cross-platform signals are strongest
 3. Polymarket odds are high-signal — real money on outcomes
 4. Cite sources: prefer @handles > r/subs > YouTube channels > TikTok > Instagram > HN > Polymarket > web
-5. Use the same "What I learned" format, KEY PATTERNS, and stats block
+5. Present the result in this order:
+   - optional `What changed since {last_date}` section when history exists
+   - `What I learned`
+   - `Key patterns`
+   - source stats block
+   - short invitation for the next step
 
 **CRITICAL ADDITION — What Changed (if history exists):**
 
@@ -232,7 +252,22 @@ If this person/topic has previous entries, read the most recent entry's synthesi
 
 Ground this comparison in the ACTUAL content of the previous entries vs the new research. Don't make things up. If you can't meaningfully compare (e.g., previous entry was too sparse), say so and skip the section.
 
-Then show the standard "What I learned" section, stats block, and invitation — same format as `/last30days`.
+Then present the final response using this structure:
+
+```markdown
+**What I learned**
+- 3-6 specific findings grounded in the evidence
+
+**Key patterns**
+- 2-4 cross-platform patterns, themes, or repeated signals
+
+**Source stats**
+- Brief platform summary using the report and notable items
+```
+
+For `recommendations`, bias the findings toward concrete picks and trade-offs.
+For `news`, bias toward what is new or changed. For `prompting`, bias toward
+useful prompt structures and workflow takeaways.
 
 ---
 
@@ -269,7 +304,14 @@ Saved to ~/Desktop/last365days/<slug>.md (<N> entries total)
 
 ## STEP 6: Invitation
 
-Same as `/last30days` — adapt to QUERY_TYPE. Include 2-3 specific suggestions based on the research.
+End with 2-3 specific next-step suggestions based on `QUERY_TYPE`:
+
+- `recommendations`: offer a shortlist, comparison table, or opinionated picks
+- `news`: offer a timeline, change summary, or watchlist
+- `prompting`: offer copy-paste prompts, tool-specific variants, or a prompt
+  pack
+- `general`: offer a deeper dive, a comparison with another topic, or a saved
+  follow-up later
 
 **Additional suggestions for profiles with history:**
 - "Compare how things have changed since [earliest date]"
@@ -277,153 +319,26 @@ Same as `/last30days` — adapt to QUERY_TYPE. Include 2-3 specific suggestions 
 
 ---
 
-## UTILITY: Browse Profiles
+## Additional operations
 
-If the user asks to see their profiles, list existing research, or check history:
-
-```bash
-python3 ${CLAUDE_SKILL_DIR}/scripts/persist.py list
-```
-
-For a specific profile's timeline:
-
-```bash
-python3 ${CLAUDE_SKILL_DIR}/scripts/persist.py history "<slug>"
-```
-
-To read a full profile:
-
-```bash
-python3 ${CLAUDE_SKILL_DIR}/scripts/persist.py read "<slug>"
-```
-
-To search across all profiles:
-
-```bash
-python3 ${CLAUDE_SKILL_DIR}/scripts/persist.py search "query terms"
-```
-
-To search within a specific profile:
-
-```bash
-python3 ${CLAUDE_SKILL_DIR}/scripts/persist.py search "query terms" --slug "<slug>"
-```
-
-To validate paths and dependencies:
-
-```bash
-python3 ${CLAUDE_SKILL_DIR}/scripts/persist.py doctor
-```
-
-To diff two saved dates from one profile:
-
-```bash
-python3 ${CLAUDE_SKILL_DIR}/scripts/persist.py diff "<slug>" "<date1>" "<date2>"
-```
-
-To export one profile:
-
-```bash
-python3 ${CLAUDE_SKILL_DIR}/scripts/persist.py export "<slug>" --format json
-```
-
-To export every profile:
-
-```bash
-python3 ${CLAUDE_SKILL_DIR}/scripts/persist.py export --all --format csv
-```
+If the user asks to browse profiles, export data, diff two saved dates, or
+debug an installation problem, read `references/operations.md` and follow the
+matching workflow there.
 
 ---
 
 ## Context Memory
 
-Same as `/last30days`: after research, you're an expert. Answer follow-ups from memory. Don't re-search unless the user asks about a different topic.
+After research, answer follow-ups from memory. Do not re-run research unless the
+user asks about a different topic or explicitly wants a fresh update.
 
 **Additional context**: You also have access to the person's full research history via the profile file. Reference it when answering follow-ups about trends or changes over time.
 
 ---
 
-## Examples
-
-### Example 1: First research on a new person
-
-User says: "last365 Saba Nafees"
-
-Actions:
-1. `persist.py match` finds no existing profile
-2. Tells user: "No existing profile found. Creating saba-nafees.md"
-3. Runs last30days research engine across all 8 sources
-4. Synthesizes findings in "What I learned" format
-5. `persist.py append "saba-nafees" --title "Saba Nafees"` creates the file
-
-Result: `~/Desktop/last365days/saba-nafees.md` created with first dated entry.
-
-### Example 2: Follow-up research (existing profile)
-
-User says: "last365 Saba Nafees" (one month later)
-
-Actions:
-1. `persist.py match` returns exact match for saba-nafees.md (3 entries, last updated 2026-02-05)
-2. `persist.py history "saba-nafees"` loads previous synthesis for comparison
-3. Runs fresh research across all sources
-4. Synthesizes with "What Changed since 2026-02-05" section
-5. Appends new dated entry to existing file
-
-Result: `saba-nafees.md` now has 4 entries. User sees what changed since last check.
-
-### Example 3: Browsing profiles
-
-User says: "show me my last365 profiles"
-
-Actions:
-1. `persist.py list` returns all profiles with metadata
-2. Displays: slug, title, entry count, last updated date, file size
-
-Result: User sees a summary of all tracked people/topics.
-
----
-
-## Troubleshooting
-
-### Error: "Could not find last30days research engine"
-
-Cause: The last30days skill is not installed or not in any expected path.
-
-Solution:
-1. Install last30days: `npx skills add mvanhorn/last30days-skill -g -y`
-2. Verify it exists: `ls ~/.claude/skills/last30days/scripts/last30days.py`
-
-### Error: persist.py not found
-
-Cause: `CLAUDE_SKILL_DIR` environment variable is not set or points to the wrong location.
-
-Solution:
-1. Check your agent runtime sets `CLAUDE_SKILL_DIR` to this skill's directory
-2. Try running directly: `python3 /path/to/last365days/scripts/persist.py list`
-
-### Stats missing from saved entry
-
-Cause: `report.json` not found at `~/.local/share/last30days/out/report.json`, or the topic in report.json doesn't match the profile being saved.
-
-Solution:
-- This is normal if last30days output location differs from default
-- Override with `LAST30DAYS_OUT` environment variable pointing to the correct directory
-- Synthesis is still saved; only the auto-generated stats block is skipped
-
-### Profile matching is wrong
-
-Cause: A medium-confidence match was accepted for the wrong person (e.g., two people share a name token).
-
-Solution:
-- The skill always tells you which file it's writing to before persisting
-- When in doubt, it creates a new profile rather than risk corruption
-- You can manually merge profiles later by editing the MD files
-
----
-
 ## Security & Permissions
 
-Same as `/last30days`. This skill additionally:
+This skill additionally:
 - Writes MD files to `~/Desktop/last365days/` (user-visible, human-readable)
 - Reads `~/.local/share/last30days/out/report.json` for source statistics
 - Does not transmit profile data to any external service

@@ -176,6 +176,8 @@ If you need to understand where to look before changing something, start here.
   diffs, and diagnostics
 - `last365days/references/file-format.md`: profile file structure and same-day
   update format
+- `last365days/references/operations.md`: browse, export, diff, and
+  troubleshooting flows that are intentionally kept out of the main skill path
 - `tests/test_persist.py`: CLI regression coverage for slugify, matching,
   history, search, doctor, diff, and export
 - `.github/workflows/ci.yml`: syntax check plus test execution on push and pull
