@@ -53,4 +53,4 @@ When a second research run happens on the same day, persist.py appends a sub-ent
 - **Synthesis**: The LLM-generated analysis including "What I learned", key patterns, and (if history exists) "What Changed" comparison
 - **Sources**: Auto-generated from `report.json` — shows count and aggregate engagement per platform
 - **Notable Items**: Top 3 items per platform ranked by engagement (likes, score, views)
-- **Research window**: Date range covered by the last30days research engine
+- **Research window**: Date range covered by the bundled research engine

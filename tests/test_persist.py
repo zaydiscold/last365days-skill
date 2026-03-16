@@ -59,19 +59,6 @@ class PersistCliTestCase(unittest.TestCase):
         report_path.write_text(json.dumps(payload), encoding="utf-8")
         return report_path
 
-    def install_fake_last30days(self):
-        engine_path = (
-            self.home_dir
-            / ".claude"
-            / "skills"
-            / "last30days"
-            / "scripts"
-            / "last30days.py"
-        )
-        engine_path.parent.mkdir(parents=True, exist_ok=True)
-        engine_path.write_text("#!/usr/bin/env python3\nprint('ok')\n", encoding="utf-8")
-        return engine_path
-
     def test_slugify_normalizes_unicode(self):
         result = self.run_cli("slugify", "Cafe del Mar")
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -206,16 +193,15 @@ class PersistCliTestCase(unittest.TestCase):
         self.assertEqual(payload["total"], 1)
         self.assertEqual(payload["results"][0]["slug"], "saba-nafees")
 
-    def test_doctor_reports_missing_dependencies_and_report(self):
+    def test_doctor_reports_missing_report_but_bundled_engine_exists(self):
         result = self.run_cli("doctor")
-        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.returncode, 0, result.stderr)
         payload = json.loads(result.stdout)
-        self.assertEqual(payload["status"], "error")
-        self.assertEqual(payload["dependencies"]["last30days.py"]["status"], "error")
+        self.assertEqual(payload["status"], "warn")
+        self.assertEqual(payload["dependencies"]["research_engine"]["status"], "ok")
         self.assertEqual(payload["report_json"]["status"], "warn")
 
     def test_doctor_validates_report_shape_and_optional_qmd(self):
-        engine_path = self.install_fake_last30days()
         self.write_report(
             {
                 "topic": "Saba Nafees",
@@ -235,10 +221,10 @@ class PersistCliTestCase(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         payload = json.loads(result.stdout)
         self.assertEqual(payload["status"], "warn")
-        self.assertEqual(payload["dependencies"]["last30days.py"]["status"], "ok")
+        self.assertEqual(payload["dependencies"]["research_engine"]["status"], "ok")
         self.assertEqual(
-            payload["dependencies"]["last30days.py"]["path"],
-            str(engine_path),
+            payload["dependencies"]["research_engine"]["path"],
+            str(REPO_ROOT / "last365days" / "scripts" / "last30days.py"),
         )
         self.assertEqual(payload["report_json"]["status"], "ok")
         self.assertEqual(payload["dependencies"]["qmd"]["status"], "warn")

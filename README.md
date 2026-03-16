@@ -2,20 +2,21 @@
 
 <p align="center">
   Persistent research tracking for people, brands, and topics. This skill wraps
+  a bundled research engine derived from
   <a href="https://github.com/mvanhorn/last30days-skill">last30days</a> and
   saves each run into a dated Markdown timeline.
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/skill-v1.1.1-B4A7D6?style=flat-square&labelColor=1a1a2e" alt="skill version" />
+  <img src="https://img.shields.io/badge/skill-v1.2.0-B4A7D6?style=flat-square&labelColor=1a1a2e" alt="skill version" />
   <img src="https://img.shields.io/badge/license-MIT-D4AF37?style=flat-square&labelColor=1a1a2e" alt="license" />
 </p>
 
 ## What it does
 
-`last30days` can research a topic deeply, but the output is ephemeral. Once the
-session ends, you lose the accumulated context. `last365days` adds persistence
-on top of that workflow.
+The bundled research engine can research a topic deeply, but the output is
+ephemeral. Once the session ends, you lose the accumulated context.
+`last365days` adds persistence on top of that workflow.
 
 Each run appends a dated section to a single Markdown file for that person or
 topic. Over time, that file becomes a timeline you can revisit, diff, export,
@@ -23,8 +24,8 @@ and extend.
 
 ## Compatibility matrix
 
-This repo is runtime-agnostic at the file level, but it relies on
-`last30days` for the research engine.
+This repo is runtime-agnostic at the file level and ships its own research
+engine.
 
 | Runtime | Supported | Notes |
 | --- | --- | --- |
@@ -36,12 +37,15 @@ This repo is runtime-agnostic at the file level, but it relies on
 
 ## Install
 
-Install `last30days` first. `last365days` depends on its research output and
-its `last30days.py` engine.
+`last365days` is standalone. It vendors `scripts/last30days.py` plus its
+supporting library, so users do not need a separate `last30days` install.
 
-`last365days` does not ship its own Bird/X auth implementation. It inherits
-whatever Bird path the installed `last30days` engine is using, so fixes for
-Safari-first auth or agent-shell Bird fallback belong in `last30days`.
+The bundled engine keeps Bird/X behavior inside this repo. Output, cache, and
+config paths default to `last365days` namespaces:
+
+- `~/.local/share/last365days/out`
+- `~/.cache/last365days`
+- `~/.config/last365days`
 
 To install globally:
 
@@ -58,9 +62,9 @@ npx skills add zaydiscold/last365days-skill@last365days -y
 By default, saved research goes to `~/Desktop/last365days/`. Override that
 directory with `LAST365DAYS_DIR`.
 
-`persist.py` reads stats from `~/.local/share/last30days/out/report.json` by
-default. Override that location with `LAST30DAYS_OUT` or the `--report-path`
-flag.
+`persist.py` reads stats from `~/.local/share/last365days/out/report.json` by
+default. Override that location with `LAST365DAYS_OUTPUT_DIR` or the
+`--report-path` flag.
 
 ## Usage
 
@@ -119,9 +123,9 @@ python3 last365days/scripts/persist.py export --all --format csv
 `doctor` checks:
 
 - whether the research directory exists or can be created
-- whether the last30days output directory is available
+- whether the last365days output directory is available
 - whether `report.json` is readable and shaped like a valid report
-- whether `last30days.py` is installed
+- whether the bundled research engine is present
 - whether optional `qmd` indexing is available
 
 `diff` compares two saved date blocks from the same profile using a deterministic
@@ -145,7 +149,7 @@ SKILL.md
   1. List existing profiles
   2. Match against existing files
   3. Ask for confirmation on medium-confidence matches
-  4. Run last30days research
+  4. Run bundled research
   5. Synthesize and compare against history
   6. Persist the new entry
         │
@@ -175,6 +179,8 @@ If you need to understand where to look before changing something, start here.
 
 - `last365days/SKILL.md`: runtime workflow, matching rules, and user-facing
   research behavior
+- `last365days/scripts/last30days.py`: bundled research engine entry point
+- `last365days/scripts/lib/`: bundled research engine support modules
 - `last365days/scripts/persist.py`: persistence CLI, storage parsing, exports,
   diffs, and diagnostics
 - `last365days/references/file-format.md`: profile file structure and same-day
@@ -209,7 +215,7 @@ The current design stays intentionally lean. A few limits are deliberate.
 - `diff` compares whole dated Markdown blocks. It does not produce semantic
   summaries.
 - `export --all --format md` is not supported.
-- Source stats depend on a compatible `report.json` produced by `last30days`.
+- Source stats depend on a compatible `report.json` produced by the bundled engine.
 - There are no destructive workflows yet for merge, delete-entry, or
   delete-profile.
 - File writes are simple append operations. There is no broad locking or atomic
@@ -226,11 +232,15 @@ changes.
 
 ## Changelog
 
+### v1.2.0
+
+- vendored the `last30days` research engine into this repo so `last365days` works standalone
+- moved default output, cache, and config paths to `last365days` namespaces
+- updated docs and diagnostics to validate the bundled engine instead of an external install
+
 ### v1.1.1
 
-- clarified that X/Twitter behavior is inherited from the installed `last30days` engine
-- documented that Bird/Safari agent-shell fixes belong upstream in `last30days`
-- added troubleshooting guidance for cases where `bird` works in terminal but `/last365days` cannot access X
+- clarified X/Twitter behavior and Bird troubleshooting
 
 ### v1.1.0
 

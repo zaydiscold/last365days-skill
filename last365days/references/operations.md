@@ -38,7 +38,7 @@ User says: `last365 Saba Nafees`
 Actions:
 1. `persist.py match` finds no existing profile.
 2. Tell the user you are creating `saba-nafees.md`.
-3. Run the `last30days` research flow.
+3. Run the bundled research flow.
 4. Synthesize findings.
 5. Append the new entry with `persist.py append`.
 
@@ -63,25 +63,23 @@ Actions:
 
 ## Troubleshooting
 
-### Error: could not find last30days research engine
+### Error: bundled research engine missing
 
-Cause: the `last30days` skill is not installed in an expected location.
+Cause: this skill install is incomplete or corrupted.
 
 Try:
-1. Install it: `npx skills add mvanhorn/last30days-skill -g -y`
-2. Verify the script exists: `ls ~/.claude/skills/last30days/scripts/last30days.py`
+1. Reinstall the skill from this repo.
+2. Verify the script exists: `ls ${CLAUDE_SKILL_DIR}/scripts/last30days.py`
 
 ### X/Twitter works in `bird`, but fails inside `/last365days`
 
-Cause: `last365days` delegates all X/Twitter research to the installed
-`last30days` engine. If the engine is using an older or broken Bird path,
-`bird whoami` may work in your terminal while `/last365days` still reports X
-as unavailable.
+Cause: the bundled engine can still hit host-specific Bird or browser-cookie
+permission issues even when `bird whoami` works in your normal terminal.
 
 Try:
-1. Fix the installed `last30days` Bird path first.
-2. Re-run `python3 ${CLAUDE_SKILL_DIR}/scripts/persist.py doctor` to confirm the engine path.
-3. Retry `/last365days` after the `last30days` fix is in place.
+1. Re-run `python3 ${CLAUDE_SKILL_DIR}/scripts/persist.py doctor`.
+2. Confirm the bundled engine path is present.
+3. Retry `/last365days` after fixing Bird access in the host environment.
 
 ### Error: persist.py not found
 
@@ -97,7 +95,7 @@ Cause: `report.json` is missing, unreadable, or belongs to a different topic.
 
 Try:
 1. Run `doctor` to confirm the path and report shape.
-2. Override the output directory with `LAST30DAYS_OUT` if needed.
+2. Override the output directory with `LAST365DAYS_OUTPUT_DIR` if needed.
 3. Keep going if necessary; synthesis still saves without the stats block.
 
 ### Profile matching looks wrong

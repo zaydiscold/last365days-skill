@@ -30,10 +30,19 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 DEFAULT_RESEARCH_DIR = Path(os.environ.get("LAST365DAYS_DIR", str(Path.home() / "Desktop" / "last365days")))
-DEFAULT_LAST30DAYS_OUT = Path(os.environ.get("LAST30DAYS_OUT", str(Path.home() / ".local" / "share" / "last30days" / "out")))
+DEFAULT_REPORT_OUT = Path(
+    os.environ.get(
+        "LAST365DAYS_OUTPUT_DIR"
+    ) or os.environ.get(
+        "LAST365DAYS_OUT"
+    ) or os.environ.get(
+        "LAST30DAYS_OUT"
+    ) or str(Path.home() / ".local" / "share" / "last365days" / "out")
+)
+BUNDLED_ENGINE_PATH = Path(__file__).resolve().with_name("last30days.py")
 
 RESEARCH_DIR = DEFAULT_RESEARCH_DIR
-LAST30DAYS_OUT = DEFAULT_LAST30DAYS_OUT
+REPORT_OUT = DEFAULT_REPORT_OUT
 
 
 def slugify(text: str) -> str:
@@ -200,51 +209,22 @@ def _check_directory(path: Path, *, create_on_write: bool = False) -> Dict[str, 
     }
 
 
-def _last30days_candidates() -> List[Path]:
-    candidates: List[Path] = []
-    raw_candidates = [
-        ".",
-        os.environ.get("CLAUDE_PLUGIN_ROOT"),
-        os.environ.get("CLAUDE_SKILL_DIR"),
-        str(Path.home() / ".claude" / "skills" / "last30days"),
-        str(Path.home() / ".agents" / "skills" / "last30days"),
-        str(Path.home() / ".codex" / "skills" / "last30days"),
-    ]
-    seen = set()
-    for raw in raw_candidates:
-        if not raw:
-            continue
-        candidate = Path(raw).expanduser()
-        key = str(candidate)
-        if key in seen:
-            continue
-        seen.add(key)
-        candidates.append(candidate)
-    return candidates
-
-
-def find_last30days_script() -> Dict[str, Any]:
-    checked = []
-    for root in _last30days_candidates():
-        script_path = root / "scripts" / "last30days.py"
-        checked.append(str(script_path))
-        if script_path.exists():
-            return {
-                "status": "ok",
-                "path": str(script_path),
-                "checked": checked,
-                "message": "Found last30days research engine.",
-            }
+def find_bundled_research_engine() -> Dict[str, Any]:
+    if BUNDLED_ENGINE_PATH.exists():
+        return {
+            "status": "ok",
+            "path": str(BUNDLED_ENGINE_PATH),
+            "message": "Bundled research engine is available.",
+        }
     return {
         "status": "error",
-        "path": None,
-        "checked": checked,
-        "message": "Could not find last30days.py in any expected install location.",
+        "path": str(BUNDLED_ENGINE_PATH),
+        "message": "Bundled research engine is missing from this skill install.",
     }
 
 
 def read_report() -> dict:
-    report_path = LAST30DAYS_OUT / "report.json"
+    report_path = REPORT_OUT / "report.json"
     if not report_path.exists():
         return {}
     try:
@@ -325,9 +305,9 @@ def _validate_report_shape(report: Any) -> Dict[str, Any]:
 
 def run_doctor() -> Dict[str, Any]:
     research_dir = _check_directory(RESEARCH_DIR, create_on_write=True)
-    output_dir = _check_directory(LAST30DAYS_OUT)
-    report_path = LAST30DAYS_OUT / "report.json"
-    last30days_dep = find_last30days_script()
+    output_dir = _check_directory(REPORT_OUT)
+    report_path = REPORT_OUT / "report.json"
+    research_engine_dep = find_bundled_research_engine()
 
     qmd_path = shutil.which("qmd")
     qmd_dep = {
@@ -340,7 +320,7 @@ def run_doctor() -> Dict[str, Any]:
         report_json = {
             "status": "warn",
             "path": str(report_path),
-            "message": "report.json not found. Run last30days first if you want source stats.",
+            "message": "report.json not found. Run last365days research first if you want source stats.",
         }
     else:
         try:
@@ -362,16 +342,16 @@ def run_doctor() -> Dict[str, Any]:
         research_dir["status"],
         output_dir["status"],
         report_json["status"],
-        last30days_dep["status"],
+        research_engine_dep["status"],
         qmd_dep["status"],
     )
     return {
         "status": status,
         "research_dir": research_dir,
-        "last30days_output_dir": output_dir,
+        "research_output_dir": output_dir,
         "report_json": report_json,
         "dependencies": {
-            "last30days.py": last30days_dep,
+            "research_engine": research_engine_dep,
             "qmd": qmd_dep,
         },
     }
@@ -831,7 +811,7 @@ def read_profile(slug: str) -> dict:
 def main():
     parser = argparse.ArgumentParser(description="Persistence layer for last365days research")
     parser.add_argument("--research-dir", help="Override research directory (default: ~/Desktop/last365days/ or LAST365DAYS_DIR)")
-    parser.add_argument("--report-path", help="Override last30days output directory (default: ~/.local/share/last30days/out or LAST30DAYS_OUT)")
+    parser.add_argument("--report-path", help="Override report output directory (default: ~/.local/share/last365days/out or LAST365DAYS_OUTPUT_DIR)")
     sub = parser.add_subparsers(dest="command")
 
     sub.add_parser("list", help="List existing profiles")
@@ -869,11 +849,11 @@ def main():
 
     args = parser.parse_args()
 
-    global RESEARCH_DIR, LAST30DAYS_OUT
+    global RESEARCH_DIR, REPORT_OUT
     if args.research_dir:
         RESEARCH_DIR = Path(args.research_dir)
     if args.report_path:
-        LAST30DAYS_OUT = Path(args.report_path)
+        REPORT_OUT = Path(args.report_path)
 
     if args.command == "list":
         print(json.dumps(list_profiles(), indent=2))

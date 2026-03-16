@@ -6,22 +6,20 @@ description: >-
   to save repeated research into dated history files.
 ---
 
-# last365days v1.1.1: Persistent Research Tracker
+# last365days v1.2.0: Persistent Research Tracker
 
-Same deep research as `/last30days` — Reddit, X, YouTube, TikTok, Instagram, HN, Polymarket, web — but every run is saved to a per-person/topic MD file. Over time you build a running timeline: what changed, what's new, how far they've come.
+Same deep research as the bundled `scripts/last30days.py` engine — Reddit, X, YouTube, TikTok, Instagram, HN, Polymarket, web — but every run is saved to a per-person/topic MD file. Over time you build a running timeline: what changed, what's new, how far they've come.
 
 Research folder: `~/Desktop/last365days/`
 
 ## Requirements
 
-This skill depends on the `last30days` skill for the research engine. It uses
-`${CLAUDE_SKILL_DIR}` for local script paths and reads source stats from
-`~/.local/share/last30days/out/report.json` by default.
+This skill is standalone. The research engine is bundled in
+`${CLAUDE_SKILL_DIR}/scripts/last30days.py`, and source stats are read from
+`~/.local/share/last365days/out/report.json` by default.
 
-X/Twitter behavior is inherited from the installed `last30days` engine. This
-skill does not vendor or override Bird auth/search logic itself. If Safari
-works in a normal terminal but fails inside an agent shell, the fix belongs in
-`last30days`, not here.
+X/Twitter behavior is handled by the bundled engine. Bird auth remains
+Safari-first when available, with fallback handled inside the bundled stack.
 
 Optional: if `qmd` is installed in the host environment, you can refresh your
 knowledge index after a run with:
@@ -180,7 +178,7 @@ If you find a verified handle, pass it as `--x-handle={handle}` in the research 
 
 ## STEP 2: Run Research
 
-Run the Last 30 Days research engine. This is the same script — nothing changes about the research quality or depth.
+Run the bundled research engine. Research quality and depth stay the same.
 
 **Flag forwarding**: If the user includes any of these flags, pass them through to the research script:
 - `--days=N` — override the default 30-day window (e.g., `--days=7` for a quick weekly check)
@@ -189,21 +187,10 @@ Run the Last 30 Days research engine. This is the same script — nothing change
 - `--x-handle=HANDLE` — from STEP 1 if an X handle was resolved
 
 ```bash
-for dir in \
-  "." \
-  "${CLAUDE_PLUGIN_ROOT:-}" \
-  "$HOME/.claude/skills/last30days" \
-  "$HOME/.agents/skills/last30days" \
-  "$HOME/.codex/skills/last30days"; do
-  [ -n "$dir" ] && [ -f "$dir/scripts/last30days.py" ] && SKILL_ROOT="$dir" && break
-done
-
-if [ -z "${SKILL_ROOT:-}" ]; then
-  echo "ERROR: Could not find last30days research engine" >&2
-  exit 1
-fi
-
-python3 "${SKILL_ROOT}/scripts/last30days.py" "<TOPIC>" --emit=compact --no-native-web
+LAST30DAYS_OUTPUT_DIR="${LAST365DAYS_OUTPUT_DIR:-$HOME/.local/share/last365days/out}" \
+LAST30DAYS_CACHE_DIR="${LAST365DAYS_CACHE_DIR:-$HOME/.cache/last365days}" \
+LAST30DAYS_CONFIG_DIR="${LAST365DAYS_CONFIG_DIR:-$HOME/.config/last365days}" \
+python3 "${CLAUDE_SKILL_DIR}/scripts/last30days.py" "<TOPIC>" --emit=compact --no-native-web
 ```
 
 Run the same command with the real parsed topic text in place of the final
@@ -295,7 +282,7 @@ persist.py will:
 - Add a dated section header (`## YYYY-MM-DD`)
 - Handle same-day runs (sub-entries under the same date)
 - Include your synthesis under `### Synthesis`
-- Pull source statistics from `~/.local/share/last30days/out/report.json` automatically
+- Pull source statistics from `~/.local/share/last365days/out/report.json` automatically
 - Validate that report.json matches the topic before pulling stats
 - Add top sources by engagement
 
@@ -345,5 +332,5 @@ user asks about a different topic or explicitly wants a fresh update.
 
 This skill additionally:
 - Writes MD files to `~/Desktop/last365days/` (user-visible, human-readable)
-- Reads `~/.local/share/last30days/out/report.json` for source statistics
+- Reads `~/.local/share/last365days/out/report.json` for source statistics
 - Does not transmit profile data to any external service
