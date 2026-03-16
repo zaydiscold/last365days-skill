@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/skill-v1.2.0-B4A7D6?style=flat-square&labelColor=1a1a2e" alt="skill version" />
+  <img src="https://img.shields.io/badge/skill-v1.2.1-B4A7D6?style=flat-square&labelColor=1a1a2e" alt="skill version" />
   <img src="https://img.shields.io/badge/license-MIT-D4AF37?style=flat-square&labelColor=1a1a2e" alt="license" />
 </p>
 
@@ -231,6 +231,11 @@ changes.
 - broader locking and atomic rewrite strategy for concurrent edits
 
 ## Changelog
+
+### v1.2.1
+
+- trimmed vendored Bird dependency files that are not needed at runtime (`.d.ts` and source maps)
+- re-verified the bundled engine, diagnostics, and test suite after the trim
 
 ### v1.2.0
 

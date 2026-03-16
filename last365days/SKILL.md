@@ -6,7 +6,7 @@ description: >-
   to save repeated research into dated history files.
 ---
 
-# last365days v1.2.0: Persistent Research Tracker
+# last365days v1.2.1: Persistent Research Tracker
 
 Same deep research as the bundled `scripts/last30days.py` engine — Reddit, X, YouTube, TikTok, Instagram, HN, Polymarket, web — but every run is saved to a per-person/topic MD file. Over time you build a running timeline: what changed, what's new, how far they've come.
 
