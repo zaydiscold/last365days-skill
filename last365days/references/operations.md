@@ -71,6 +71,18 @@ Try:
 1. Install it: `npx skills add mvanhorn/last30days-skill -g -y`
 2. Verify the script exists: `ls ~/.claude/skills/last30days/scripts/last30days.py`
 
+### X/Twitter works in `bird`, but fails inside `/last365days`
+
+Cause: `last365days` delegates all X/Twitter research to the installed
+`last30days` engine. If the engine is using an older or broken Bird path,
+`bird whoami` may work in your terminal while `/last365days` still reports X
+as unavailable.
+
+Try:
+1. Fix the installed `last30days` Bird path first.
+2. Re-run `python3 ${CLAUDE_SKILL_DIR}/scripts/persist.py doctor` to confirm the engine path.
+3. Retry `/last365days` after the `last30days` fix is in place.
+
 ### Error: persist.py not found
 
 Cause: `${CLAUDE_SKILL_DIR}` is missing or points to the wrong directory.

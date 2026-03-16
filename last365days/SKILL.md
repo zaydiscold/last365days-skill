@@ -6,7 +6,7 @@ description: >-
   to save repeated research into dated history files.
 ---
 
-# last365days v1.1: Persistent Research Tracker
+# last365days v1.1.1: Persistent Research Tracker
 
 Same deep research as `/last30days` — Reddit, X, YouTube, TikTok, Instagram, HN, Polymarket, web — but every run is saved to a per-person/topic MD file. Over time you build a running timeline: what changed, what's new, how far they've come.
 
@@ -17,6 +17,11 @@ Research folder: `~/Desktop/last365days/`
 This skill depends on the `last30days` skill for the research engine. It uses
 `${CLAUDE_SKILL_DIR}` for local script paths and reads source stats from
 `~/.local/share/last30days/out/report.json` by default.
+
+X/Twitter behavior is inherited from the installed `last30days` engine. This
+skill does not vendor or override Bird auth/search logic itself. If Safari
+works in a normal terminal but fails inside an agent shell, the fix belongs in
+`last30days`, not here.
 
 Optional: if `qmd` is installed in the host environment, you can refresh your
 knowledge index after a run with:

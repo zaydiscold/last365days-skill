@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/skill-v1.1.0-B4A7D6?style=flat-square&labelColor=1a1a2e" alt="skill version" />
+  <img src="https://img.shields.io/badge/skill-v1.1.1-B4A7D6?style=flat-square&labelColor=1a1a2e" alt="skill version" />
   <img src="https://img.shields.io/badge/license-MIT-D4AF37?style=flat-square&labelColor=1a1a2e" alt="license" />
 </p>
 
@@ -38,6 +38,10 @@ This repo is runtime-agnostic at the file level, but it relies on
 
 Install `last30days` first. `last365days` depends on its research output and
 its `last30days.py` engine.
+
+`last365days` does not ship its own Bird/X auth implementation. It inherits
+whatever Bird path the installed `last30days` engine is using, so fixes for
+Safari-first auth or agent-shell Bird fallback belong in `last30days`.
 
 To install globally:
 
@@ -221,6 +225,12 @@ changes.
 - broader locking and atomic rewrite strategy for concurrent edits
 
 ## Changelog
+
+### v1.1.1
+
+- clarified that X/Twitter behavior is inherited from the installed `last30days` engine
+- documented that Bird/Safari agent-shell fixes belong upstream in `last30days`
+- added troubleshooting guidance for cases where `bird` works in terminal but `/last365days` cannot access X
 
 ### v1.1.0
 
