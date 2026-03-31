@@ -36,10 +36,26 @@ DEFAULT_REPORT_OUT = Path(
     ) or os.environ.get(
         "LAST365DAYS_OUT"
     ) or os.environ.get(
+        "LAST30DAYS_OUTPUT_DIR"
+    ) or os.environ.get(
         "LAST30DAYS_OUT"
     ) or str(Path.home() / ".local" / "share" / "last365days" / "out")
 )
-BUNDLED_ENGINE_PATH = Path(__file__).resolve().with_name("last30days.py")
+
+
+def resolve_research_engine_path() -> Path:
+    candidates = [
+        Path.home() / ".agents" / "skills" / "last30days" / "scripts" / "last30days.py",
+        Path.home() / ".codex" / "skills" / "last30days" / "scripts" / "last30days.py",
+        Path.home() / ".claude" / "skills" / "last30days" / "scripts" / "last30days.py",
+        Path.home() / ".gemini" / "extensions" / "last30days" / "scripts" / "last30days.py",
+        Path.home() / ".gemini" / "extensions" / "last30days-skill" / "scripts" / "last30days.py",
+        Path(__file__).resolve().with_name("last30days.py"),
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[-1]
 
 RESEARCH_DIR = DEFAULT_RESEARCH_DIR
 REPORT_OUT = DEFAULT_REPORT_OUT
@@ -209,17 +225,18 @@ def _check_directory(path: Path, *, create_on_write: bool = False) -> Dict[str, 
     }
 
 
-def find_bundled_research_engine() -> Dict[str, Any]:
-    if BUNDLED_ENGINE_PATH.exists():
+def find_shared_research_engine() -> Dict[str, Any]:
+    engine_path = resolve_research_engine_path()
+    if engine_path.exists():
         return {
             "status": "ok",
-            "path": str(BUNDLED_ENGINE_PATH),
-            "message": "Bundled research engine is available.",
+            "path": str(engine_path),
+            "message": "Shared research engine is available.",
         }
     return {
         "status": "error",
-        "path": str(BUNDLED_ENGINE_PATH),
-        "message": "Bundled research engine is missing from this skill install.",
+        "path": str(engine_path),
+        "message": "Shared research engine could not be found.",
     }
 
 
@@ -307,7 +324,7 @@ def run_doctor() -> Dict[str, Any]:
     research_dir = _check_directory(RESEARCH_DIR, create_on_write=True)
     output_dir = _check_directory(REPORT_OUT)
     report_path = REPORT_OUT / "report.json"
-    research_engine_dep = find_bundled_research_engine()
+    research_engine_dep = find_shared_research_engine()
 
     qmd_path = shutil.which("qmd")
     qmd_dep = {

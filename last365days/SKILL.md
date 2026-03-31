@@ -8,18 +8,19 @@ description: >-
 
 # last365days v1.2.1: Persistent Research Tracker
 
-Same deep research as the bundled `scripts/last30days.py` engine — Reddit, X, YouTube, TikTok, Instagram, HN, Polymarket, web — but every run is saved to a per-person/topic MD file. Over time you build a running timeline: what changed, what's new, how far they've come.
+Same deep research as the shared `last30days` engine — Reddit, X, YouTube, TikTok, Instagram, HN, Polymarket, web — but every run is saved to a per-person/topic MD file. Over time you build a running timeline: what changed, what's new, how far they've come.
 
 Research folder: `~/Desktop/last365days/`
 
 ## Requirements
 
-This skill is standalone. The research engine is bundled in
-`${CLAUDE_SKILL_DIR}/scripts/last30days.py`, and source stats are read from
-`~/.local/share/last365days/out/report.json` by default.
+This skill is the persistence wrapper. `${CLAUDE_SKILL_DIR}/scripts/last30days.py`
+is only a launcher and forwards into the installed shared `last30days` engine.
+Source stats are read from `~/.local/share/last365days/out/report.json` by default.
 
-X/Twitter behavior is handled by the bundled engine. Bird auth remains
-Safari-first when available, with fallback handled inside the bundled stack.
+Canonical config lives at `~/.config/last365days/.env`. If an older
+`~/.config/last30days/.env` exists, migrate or symlink it so both skills read
+the same credentials during the transition.
 
 Optional: if `qmd` is installed in the host environment, you can refresh your
 knowledge index after a run with:
