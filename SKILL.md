@@ -1,78 +1,207 @@
 ---
 name: last365days
-description: Use when the user requests long-term tracking, a research timeline, a persistent profile, or invokes last365 for a person/topic to save structured history.
+description: Persistent long-term research tracker that builds dated Markdown timelines for topics/people. Use when user says "track this over time", "research timeline", "last365", "persistent profile", "save research history", or requests multi-session tracking on a topic. Do NOT use for one-off quick searches without persistence.
 metadata:
   author: zaydk
-  version: 1.2.2
+  version: 1.4.1
+  upstream: https://github.com/zaydk/last365days
+  compatibility: "Requires Python 3.10+. Uses last30days.py as research engine."
 ---
 
 # last365days: Persistent Research Tracker
 
-Deep research identical to `last30days` — but saved to a persistent, dated Markdown file per profile. Over time, it builds a massive timeline summarizing what's new.
+Deep research with persistent storage — each topic gets a dated Markdown profile that grows over time. Builds a massive timeline showing what's new since you last checked.
 
-Files saved to: `~/Desktop/last365days/`
+## Output Location
+Files saved to: `~/Desktop/last365days/` or `$LAST365DAYS_OUTPUT_DIR`
 
-## Quick Start
-1. User: `last365days Anthropic`
-2. Parse intent and match `Anthropic.md`.
-3. Run `last30days.py "Anthropic"` to generate report.
-4. Supplement with WebSearch.
-5. Pipe synthesized key patterns into `persist.py append`.
+## Quick Reference
+
+| Task | Command Pattern |
+|------|-----------------|
+| Research + Save | `last365days <TOPIC>` |
+| List Profiles | `persist.py list` |
+| Read History | `persist.py history <slug>` |
+| Match Topic | `persist.py match "<topic>"` |
 
 ## Reference Navigation
-- `references/file-format.md` — Profile Markdown schema and same-day logic
-- `references/operations.md` — Browse, diff, export, or debug workflows (do not read during normal research)
 
-## Parse Intent & Check History
+**Load only when needed** — reference files contain detailed documentation for specific use cases.
 
-**If no topic provided**, list existing profiles and stop:
-```bash
-python3 ${CLAUDE_SKILL_DIR}/scripts/persist.py list
-```
+| Reference | Load When |
+|-----------|-----------|
+| `references/file-format.md` | Debugging profile format issues or same-day deduplication problems |
+| `references/operations.md` | Advanced workflows: browse, diff, export operations |
 
-**If topic provided**, match it against history:
-```bash
-python3 ${CLAUDE_SKILL_DIR}/scripts/persist.py match "<RAW_TOPIC>"
-```
-- `"exact" / "high"`: Use profile. "Found existing profile. Appending."
-- `"medium"`: Read it using `persist.py read "<slug>"`. Ask user to confirm appending or create new.
-- `No matches`: Create new.
+**Core workflow and all essential commands are in this SKILL.md.**
 
-If history exists, load context:
-```bash
-python3 ${CLAUDE_SKILL_DIR}/scripts/persist.py history "<slug>"
-```
+## Workflow: Iterative Research with Quality Gates
 
-## Resolve X Handle
-Do a quick WebSearch: `{TOPIC} X twitter handle site:x.com`. If verified, pass as `--x-handle={handle}`.
+This skill uses **iterative refinement** — research quality improves with validation loops.
 
-## Run Research Engine
-Run the `last30days` script wrapper:
+### Phase 1: Context Gathering
+**Goal**: Load prior history (if exists) to avoid duplication
+
+**Step 1: Parse Intent**
+- If no topic → `persist.py list` → stop
+- If topic → `persist.py match "<topic>"`
+
+| Match | Action |
+|-------|--------|
+| `exact`/`high` | Load history → proceed to Phase 2 |
+| `medium` | Ask user: append to `<slug>` or create new? |
+| `none` | Create new profile → Phase 2 |
+
+**Validation Gate**: Confirm profile selection with user before proceeding
+
+### Phase 2: Research Execution
+**Goal**: Gather comprehensive data
+
+**Step 2: Resolve X Handle** (if applicable)
+- Quick WebSearch for `{TOPIC} twitter x.com`
+- If verified handle found, pass `--x-handle=<handle>`
+
+**Step 3: Run last30days Engine**
 ```bash
 LAST30DAYS_OUTPUT_DIR="${LAST365DAYS_OUTPUT_DIR:-$HOME/.local/share/last365days/out}" \
-python3 "${CLAUDE_SKILL_DIR}/scripts/last30days.py" "<TOPIC>" --emit=compact --no-native-web
+python3 "${CLAUDE_SKILL_DIR}/scripts/last30days.py" "<TOPIC>" \
+  --emit=compact --no-native-web \
+  ${X_HANDLE:+--x-handle="$X_HANDLE"} \
+  ${DAYS:+--days="$DAYS"} \
+  ${QUICK:+--quick} \
+  ${DEEP:+--deep}
 ```
-Pass flags if requested: `--days=N`, `--quick`, `--deep`, `--x-handle=HANDLE`.
-Read the entire output.
 
-## WebSearch Supplement
-Supplement the script output with focused Web Search targeting `recommendations`, `news`, or `prompting` keywords. Exclude x.com/reddit.com.
+**Validation Gate**: Check exit code 0, output not empty
+**Rollback**: If script fails, run with `--quick` flag; if still fails, report error and stop
 
-## Synthesis & Presentation
-Present findings to the user.
-- **What changed since {last_date}** (if history exists)
-- **What I learned** (3-6 findings)
-- **Key patterns** (2-4 cross-platform themes)
-- **Source stats**
+**Step 4: WebSearch Supplement**
+Target: `recommendations`, `news`, `announcements`, `release`
+Exclude: `x.com`, `reddit.com` (already covered)
 
-## Persist Results
-Save your `What I learned` and `Key patterns` synthesis to the profile:
+### Phase 3: Quality Check Loop
+**Goal**: Ensure synthesis meets quality threshold
+
+**Initial Quality Criteria**:
+- [ ] At least 3 distinct findings
+- [ ] At least 2 cross-platform patterns
+- [ ] Source diversity (not all from same site)
+- [ ] Novel information (not duplicate of prior history)
+
+**If quality < threshold**:
+1. Identify gaps ("only 2 findings, need more")
+2. Run targeted WebSearch on missing angles
+3. Re-synthesize
+4. Re-validate
+5. **Max 3 iterations** — stop if quality doesn't improve
+
+### Phase 4: Synthesis & Presentation
+Structure:
+1. **What changed since {last_date}** (if prior history)
+2. **What I learned** (3-6 findings)
+3. **Key patterns** (2-4 cross-platform themes)
+4. **Source stats** (auto-read from `report.json`)
+
+### Phase 5: Persist Results
+**Goal**: Save to profile with metadata
+
 ```bash
 cat << 'SYNTHESIS_EOF' | python3 ${CLAUDE_SKILL_DIR}/scripts/persist.py append "<SLUG>" --title "<Display Name>"
-YOUR FULL SYNTHESIS TEXT HERE
+<YOUR SYNTHESIS HERE>
+
+## Key Findings
+1. ...
+2. ...
+
+## Patterns
+1. ...
+2. ...
 SYNTHESIS_EOF
 ```
-*Note: persist.py automatically reads source stats from `report.json`.*
 
-## Next Steps
-Offer 2-3 specific suggestions based on the topic. If history exists, suggest comparing changes since the earliest date.
+**Validation Gate**: Verify file was written (`persist.py read <slug>`)
+**Rollback**: If persist fails, output synthesis to user anyway with note
+## Examples
+
+### Track a company over time
+User: `research Anthropic and save it`
+```bash
+# Step 1: Match topic
+python3 ${CLAUDE_SKILL_DIR}/scripts/persist.py match "Anthropic"
+# Result: exact match found → loading Anthropic.md history
+
+# Step 2: Run research with last30days
+LAST30DAYS_OUTPUT_DIR="${LAST365DAYS_OUTPUT_DIR:-$HOME/.local/share/last365days/out}" \
+python3 "${CLAUDE_SKILL_DIR}/scripts/last30days.py" "Anthropic" --emit=compact --no-native-web
+
+# Step 3: Synthesize and append
+cat << 'EOF' | python3 ${CLAUDE_SKILL_DIR}/scripts/persist.py append "anthropic" --title "Anthropic"
+## 2025-04-07 Research Update
+
+### What Changed Since 2025-03-15
+- New: Claude 3.7 Sonnet released with extended thinking
+- Update: Computer use API now generally available
+
+### Key Findings
+1. Launched "research mode" with 64k token extended thinking
+2. MCP protocol adoption accelerating across AI tools
+3. New pricing tiers for high-volume API users
+
+### Patterns
+- Release cycle accelerating (quarterly major updates)
+- Developer tooling prioritized over consumer features
+EOF
+
+# Output to user: "Updated anthropic.md — 4 new findings since March 15"
+```
+
+### Research a person
+User: `track research on Simon Willison`
+```bash
+# Match: "simon-willison" not found → creating new profile
+
+# Run research
+python3 "${CLAUDE_SKILL_DIR}/scripts/last30days.py" "Simon Willison" --emit=compact
+
+# Create profile
+cat << 'EOF' | python3 ${CLAUDE_SKILL_DIR}/scripts/persist.py append "simon-willison" --title "Simon Willison"
+## 2025-04-07 — First Research
+
+### Key Findings
+1. Released datasette-lite 0.3 with WASM improvements
+2. Blogging about LLM tokenization edge cases
+3. New tool: llm-fragments for context window management
+
+### Patterns
+- Consistent weekly blog posts on niche technical topics
+- Tools focused on data exploration and LLM interaction
+EOF
+
+# Output: "Created simon-willison.md — will track updates over time"
+```
+
+### List what you're tracking
+User: `what topics am I tracking?`
+```bash
+python3 ${CLAUDE_SKILL_DIR}/scripts/persist.py list
+
+# Output:
+# 1. anthropic — Last updated: 2025-04-07 (5 entries total)
+# 2. simon-willison — Last updated: 2025-04-07 (1 entry)
+# 3. openai — Last updated: 2025-03-28 (3 entries total)
+```
+
+## Troubleshooting
+
+| Issue | Cause | Fix |
+|-------|-------|-----|
+| `No such file` | persist.py not found | Check `${CLAUDE_SKILL_DIR}` is set |
+| `report.json not found` | last30days failed | Check script output, retry |
+| Same-day duplicate | Running twice in one day | persist.py auto-deduplicates same-day entries |
+| Empty synthesis | No new findings | Report "No significant changes since last check" |
+
+## Next Steps Pattern
+After presenting, offer 2-3 specific actions:
+1. Suggest comparing changes since earliest date (if history exists)
+2. Recommend related topics to track
+3. Offer to set up monitoring/alerts
